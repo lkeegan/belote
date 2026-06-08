@@ -102,7 +102,6 @@ let taker: number | null = null;
 let revealed = [false, false, false, false];
 
 const takerKey = (s: string) => `belote.taker.${s}`;
-const LAST_SEED_KEY = "belote.seed";
 
 function loadTaker(s: string): number | null {
   if (!s) return null;
@@ -129,12 +128,28 @@ function setTaker(t: number | null): void {
   render();
 }
 
+/** Seat that starts the bidding: game number mod 4, so it rotates each game. */
+function firstBidder(s: string): number {
+  const n = parseInt(s, 10);
+  if (Number.isNaN(n)) return 0;
+  return ((n % PLAYERS.length) + PLAYERS.length) % PLAYERS.length;
+}
+
+/** Default game number for the day (YYYYMMDD), shared by everyone that day. */
+function todaySeed(): string {
+  const d = new Date();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}${m}${day}`;
+}
+
 // --- Rendering --------------------------------------------------------------
 
 function renderQuadrant(
   seat: number,
   hand: Card[],
   trumpSuit: Suit | undefined,
+  isStarter: boolean,
 ): HTMLElement {
   const q = document.createElement("div");
   q.className = `quadrant ${CORNERS[seat]}${taker === seat ? " taker" : ""}`;
@@ -145,6 +160,14 @@ function renderQuadrant(
   const name = document.createElement("span");
   name.className = "name";
   name.textContent = PLAYERS[seat];
+  head.appendChild(name);
+
+  if (isStarter) {
+    const badge = document.createElement("span");
+    badge.className = "starter-badge";
+    badge.textContent = "commence";
+    head.appendChild(badge);
+  }
 
   const take = document.createElement("button");
   take.type = "button";
@@ -155,7 +178,7 @@ function renderQuadrant(
     setTaker(taker === seat ? null : seat);
   });
 
-  head.append(name, take);
+  head.appendChild(take);
 
   const area = document.createElement("div");
   area.className = "hand-area";
@@ -232,35 +255,39 @@ function render(): void {
     trumpSuit = d.trumpSuit;
   }
 
+  const starter = firstBidder(seed);
   for (let seat = 0; seat < PLAYERS.length; seat++) {
-    table.appendChild(renderQuadrant(seat, hands[seat], trumpSuit));
+    table.appendChild(
+      renderQuadrant(seat, hands[seat], trumpSuit, seat === starter),
+    );
   }
   table.appendChild(renderCenter(trumpCard, trumpSuit));
 }
 
 // --- Wiring -----------------------------------------------------------------
 
+/** Switch to a game number, updating the input and reloading per-game state. */
+function setSeed(newSeed: string): void {
+  seed = newSeed;
+  seedInput.value = newSeed;
+  taker = loadTaker(newSeed);
+  revealed = [false, false, false, false];
+  render();
+}
+
+// Typing in the field shouldn't overwrite the input's own value mid-edit.
 seedInput.addEventListener("input", () => {
   seed = seedInput.value.trim();
   taker = loadTaker(seed);
   revealed = [false, false, false, false];
-  try {
-    localStorage.setItem(LAST_SEED_KEY, seed);
-  } catch {
-    /* ignore */
-  }
   render();
 });
 
-try {
-  const last = localStorage.getItem(LAST_SEED_KEY);
-  if (last) {
-    seedInput.value = last;
-    seed = last;
-    taker = loadTaker(last);
-  }
-} catch {
-  /* ignore */
-}
+const nextGame = document.querySelector<HTMLButtonElement>("#next-game")!;
+nextGame.addEventListener("click", () => {
+  setSeed(String((parseInt(seed, 10) || 0) + 1));
+});
 
-render();
+// Default to today's date (YYYYMMDD) so everyone playing that day starts from
+// the same number, but it differs day to day.
+setSeed(todaySeed());
