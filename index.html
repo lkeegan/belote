@@ -6,42 +6,24 @@
     <title>Belote</title>
   </head>
   <body>
-    <main id="app">
-      <header>
+    <div id="app">
+      <header class="topbar">
         <h1>Belote</h1>
-      </header>
-
-      <form id="setup">
-        <p class="hint">
-          Agree on a game number with the other players, then choose your seat.
-          Everyone who enters the same number sees the same deal.
-        </p>
-        <label class="field">
+        <label class="seed-field">
           Game number
           <input
             id="seed"
-            name="seed"
             type="number"
             inputmode="numeric"
             placeholder="e.g. 42"
-            required
           />
         </label>
-        <fieldset class="seats">
-          <legend>Your seat</legend>
-          <label><input type="radio" name="seat" value="0" required /> Sebastian</label>
-          <label><input type="radio" name="seat" value="1" /> Maya</label>
-          <label><input type="radio" name="seat" value="2" /> Dadmor</label>
-          <label><input type="radio" name="seat" value="3" /> Liam</label>
-        </fieldset>
-        <p class="hint partners">
-          Partners sit diagonally: Sebastian &amp; Liam vs. Maya &amp; Dadmor.
-        </p>
-        <button type="submit">Show my hand</button>
-      </form>
-
-      <section id="result" hidden></section>
-    </main>
+        <span class="partners-note">
+          Partners: Sebastian &amp; Liam · Maya &amp; Dadmor
+        </span>
+      </header>
+      <div id="table"></div>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
