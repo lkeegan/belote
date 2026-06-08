@@ -1,0 +1,119 @@
+:root {
+  --felt: #1b6b3a;
+  --felt-dark: #14502c;
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: radial-gradient(circle at center, var(--felt), var(--felt-dark));
+  color: #fff;
+}
+
+#app {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.5rem;
+}
+
+h1 {
+  margin: 0;
+  font-size: 2rem;
+  letter-spacing: 0.05em;
+}
+
+#deal {
+  font-size: 1rem;
+  padding: 0.6rem 1.4rem;
+  border: none;
+  border-radius: 999px;
+  background: #f5c542;
+  color: #14502c;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.05s ease, filter 0.15s ease;
+}
+
+#deal:hover {
+  filter: brightness(1.05);
+}
+
+#deal:active {
+  transform: scale(0.97);
+}
+
+#table {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1.25rem;
+}
+
+.hand h2 {
+  margin: 0 0 0.6rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.card {
+  position: relative;
+  width: 54px;
+  height: 78px;
+  background: #fff;
+  border-radius: 6px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.35);
+  font-weight: 700;
+}
+
+.card.red {
+  color: #d4163c;
+}
+
+.card.black {
+  color: #1a1a1a;
+}
+
+.corner {
+  position: absolute;
+  font-size: 0.7rem;
+  line-height: 0.9;
+  text-align: center;
+}
+
+.corner.top {
+  top: 4px;
+  left: 4px;
+}
+
+.corner.bottom {
+  bottom: 4px;
+  right: 4px;
+  transform: rotate(180deg);
+}
+
+.pip {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.8rem;
+}
