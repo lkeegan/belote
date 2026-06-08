@@ -11,6 +11,7 @@
 html,
 body {
   height: 100%;
+  overflow: hidden;
 }
 
 body {
@@ -23,7 +24,10 @@ body {
 #app {
   display: flex;
   flex-direction: column;
+  /* Fill the visible viewport on every device with no scrolling. 100dvh
+     tracks mobile browser chrome; 100vh is the fallback for older engines. */
   height: 100vh;
+  height: 100dvh;
 }
 
 /* --- Top bar --- */
@@ -31,8 +35,9 @@ body {
 .topbar {
   flex: 0 0 auto;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 1.5rem;
+  gap: 1rem 1.5rem;
   padding: 0.7rem 1.2rem;
   background: rgba(0, 0, 0, 0.25);
 }
@@ -63,6 +68,7 @@ body {
 #table {
   position: relative;
   flex: 1 1 auto;
+  min-height: 0; /* allow the grid to shrink within the flex column */
   display: grid;
   grid-template-columns: 1fr 1fr;
   grid-template-rows: 1fr 1fr;
@@ -306,4 +312,50 @@ body {
 .trump-info strong {
   text-transform: capitalize;
   font-size: 1.2rem;
+}
+
+/* Shrink cards on small or short screens so eight fit a corner without
+   scrolling or clipping. */
+@media (max-width: 760px), (max-height: 620px) {
+  .quadrant {
+    padding: 0.6rem;
+    gap: 0.35rem;
+  }
+
+  .card {
+    width: 60px;
+    height: 86px;
+    border-radius: 6px;
+  }
+
+  .corner-mark {
+    font-size: 0.85rem;
+  }
+
+  .corner-mark.top {
+    top: 4px;
+    left: 5px;
+  }
+
+  .corner-mark.bottom {
+    bottom: 4px;
+    right: 5px;
+  }
+
+  .pip {
+    font-size: 1.9rem;
+  }
+
+  .cards {
+    gap: 0.25rem;
+    max-width: 48vw;
+  }
+
+  .cards.backs .card.back:not(:first-child) {
+    margin-left: -40px;
+  }
+
+  .seat-head .name {
+    font-size: 1rem;
+  }
 }
