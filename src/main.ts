@@ -135,12 +135,16 @@ function firstBidder(s: string): number {
   return ((n % PLAYERS.length) + PLAYERS.length) % PLAYERS.length;
 }
 
-/** Default game number for the day (YYYYMMDD), shared by everyone that day. */
+/**
+ * Default game number for the day, shared by everyone that day. Encoded as
+ * (year - 2026) * 10000 + month * 100 + day to keep it short — e.g. 2026-06-08
+ * is 608, 2027-01-15 is 10115.
+ */
 function todaySeed(): string {
   const d = new Date();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${d.getFullYear()}${m}${day}`;
+  const n =
+    (d.getFullYear() - 2026) * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+  return String(n);
 }
 
 // --- Rendering --------------------------------------------------------------
