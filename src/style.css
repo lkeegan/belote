@@ -81,7 +81,27 @@ h1 {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
   cursor: pointer;
+}
+
+/* Tint each diagonal partnership so the pairing is obvious at a glance.
+   The legend is the fieldset's first child, so labels run from nth-child(2):
+   Sebastian (2) & Liam (5) on one diagonal, Maya (3) & Dadmor (4) on the other. */
+.seats label:nth-child(2),
+.seats label:nth-child(5) {
+  background: rgba(245, 197, 66, 0.18);
+}
+
+.seats label:nth-child(3),
+.seats label:nth-child(4) {
+  background: rgba(120, 200, 255, 0.18);
+}
+
+.hint.partners {
+  margin: 0;
+  font-size: 0.9rem;
 }
 
 button {

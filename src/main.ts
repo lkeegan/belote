@@ -1,7 +1,10 @@
 import "./style.css";
 import { dealBelote, type Card, type Suit } from "./deck";
 
-const PLAYERS = ["North", "East", "South", "West"];
+// Seats are laid out in a 2x2 grid, so indices 0/3 share one diagonal and 1/2
+// the other. Sebastian (0) and Liam (3) are therefore diagonally opposite
+// partners, as are Maya (1) and Dadmor (2).
+const PLAYERS = ["Sebastian", "Maya", "Dadmor", "Liam"];
 
 const SUIT_SYMBOL: Record<Suit, string> = {
   hearts: "♥",
