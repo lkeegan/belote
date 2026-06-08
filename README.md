@@ -36,7 +36,11 @@ pnpm install
 pnpm dev      # start the dev server
 pnpm build    # type-check and build to dist/
 pnpm preview  # preview the production build
+pnpm test     # run the unit tests (Vitest)
 ```
+
+The unit tests (`src/*.test.ts`) cover the dealing logic and also run in CI
+before each deploy.
 
 ## Deployment
 
