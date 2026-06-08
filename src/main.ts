@@ -135,16 +135,20 @@ function firstBidder(s: string): number {
   return ((n % PLAYERS.length) + PLAYERS.length) % PLAYERS.length;
 }
 
+// Reserve the last two digits as a game-of-day counter, so incrementing within
+// a day (Partie suivante) never reaches the next day's default number.
+const GAMES_PER_DAY = 100;
+
 /**
  * Default game number for the day, shared by everyone that day. Encoded as
- * (year - 2026) * 10000 + month * 100 + day to keep it short — e.g. 2026-06-08
- * is 608, 2027-01-15 is 10115.
+ * ((year - 2026) * 10000 + month * 100 + day) * 100, so 2026-06-08 is 60800,
+ * its second game 60801, and tomorrow starts cleanly at 60900.
  */
 function todaySeed(): string {
   const d = new Date();
-  const n =
+  const dateCode =
     (d.getFullYear() - 2026) * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
-  return String(n);
+  return String(dateCode * GAMES_PER_DAY);
 }
 
 // --- Rendering --------------------------------------------------------------
