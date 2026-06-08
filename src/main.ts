@@ -12,7 +12,7 @@ import {
 // Players sit in the four corners. Partners are diagonal, so Sebastian
 // (top-left) pairs with Liam (bottom-right) and Maya (top-right) with Dadmor
 // (bottom-left).
-const PLAYERS = ["Sebastian", "Maya", "Dadmor", "Liam"];
+const PLAYERS = ["Sébastian", "Maya", "Dadmor", "Liam"];
 const CORNERS = ["corner-tl", "corner-tr", "corner-bl", "corner-br"];
 
 const SUIT_SYMBOL: Record<Suit, string> = {
@@ -22,7 +22,15 @@ const SUIT_SYMBOL: Record<Suit, string> = {
   spades: "♠",
 };
 
-// French card names: Valet, Dame, Roi, As.
+// French suit names.
+const SUIT_NAME: Record<Suit, string> = {
+  hearts: "cœur",
+  diamonds: "carreau",
+  clubs: "trèfle",
+  spades: "pique",
+};
+
+// French card faces: Valet, Dame, Roi, As.
 const RANK_LABEL: Record<Rank, string> = {
   "7": "7",
   "8": "8",
@@ -32,6 +40,18 @@ const RANK_LABEL: Record<Rank, string> = {
   Q: "D",
   K: "R",
   A: "A",
+};
+
+// French rank names for accessibility labels.
+const RANK_NAME: Record<Rank, string> = {
+  "7": "7",
+  "8": "8",
+  "9": "9",
+  "10": "10",
+  J: "valet",
+  Q: "dame",
+  K: "roi",
+  A: "as",
 };
 
 function isRed(suit: Suit): boolean {
@@ -50,7 +70,7 @@ function renderCard(card: Card, isTrump = false): HTMLElement {
     <span class="pip">${symbol}</span>
     <span class="corner-mark bottom">${label}<br />${symbol}</span>
   `;
-  el.setAttribute("aria-label", `${label} of ${card.suit}`);
+  el.setAttribute("aria-label", `${RANK_NAME[card.rank]} de ${SUIT_NAME[card.suit]}`);
   return el;
 }
 
@@ -129,7 +149,7 @@ function renderQuadrant(
   const take = document.createElement("button");
   take.type = "button";
   take.className = `take${taker === seat ? " active" : ""}`;
-  take.textContent = taker === seat ? "Took" : "Take";
+  take.textContent = taker === seat ? "A pris" : "Prend";
   take.addEventListener("click", (event) => {
     event.stopPropagation();
     setTaker(taker === seat ? null : seat);
@@ -149,11 +169,11 @@ function renderQuadrant(
   } else {
     const backs = document.createElement("div");
     backs.className = "cards backs";
-    for (let b = 0; b < 3; b++) backs.appendChild(renderBack());
+    for (let b = 0; b < hand.length; b++) backs.appendChild(renderBack());
     area.appendChild(backs);
     const hint = document.createElement("span");
     hint.className = "reveal-hint";
-    hint.textContent = "tap to reveal";
+    hint.textContent = "toucher pour voir";
     area.appendChild(hint);
   }
 
@@ -175,12 +195,12 @@ function renderCenter(
   if (taker === null && trumpCard) {
     const label = document.createElement("span");
     label.className = "label";
-    label.textContent = `Turned up — ${trumpCard.suit}`;
+    label.textContent = `Retourne — ${SUIT_NAME[trumpCard.suit]}`;
     center.append(label, renderCard(trumpCard, true));
   } else if (trumpSuit !== undefined && taker !== null) {
     const info = document.createElement("p");
     info.className = "trump-info";
-    info.innerHTML = `Trump <strong>${SUIT_SYMBOL[trumpSuit]} ${trumpSuit}</strong><br />taken by ${PLAYERS[taker]}`;
+    info.innerHTML = `Atout <strong>${SUIT_SYMBOL[trumpSuit]} ${SUIT_NAME[trumpSuit]}</strong><br />pris par ${PLAYERS[taker]}`;
     center.appendChild(info);
   }
 
@@ -193,7 +213,7 @@ function render(): void {
   if (!seed) {
     const msg = document.createElement("div");
     msg.className = "empty-msg";
-    msg.textContent = "Enter a game number above to deal.";
+    msg.textContent = "Entrez un numéro de partie ci-dessus pour distribuer.";
     table.appendChild(msg);
     return;
   }

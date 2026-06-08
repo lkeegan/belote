@@ -58,12 +58,6 @@ body {
   width: 7rem;
 }
 
-.partners-note {
-  margin-left: auto;
-  font-size: 0.85rem;
-  opacity: 0.8;
-}
-
 /* --- Table --- */
 
 #table {
@@ -186,11 +180,11 @@ body {
 
 .card {
   position: relative;
-  width: 84px;
-  height: 120px;
+  width: 112px;
+  height: 160px;
   background: #fff;
   border: 1px solid #d9d9d9;
-  border-radius: 8px;
+  border-radius: 10px;
   box-shadow: 0 3px 8px rgba(0, 0, 0, 0.35);
   font-weight: 700;
   flex: 0 0 auto;
@@ -223,24 +217,24 @@ body {
 
 /* Hidden hands show a small fanned stack of backs. */
 .cards.backs .card.back:not(:first-child) {
-  margin-left: -52px;
+  margin-left: -72px;
 }
 
 .corner-mark {
   position: absolute;
-  font-size: 1.05rem;
+  font-size: 1.35rem;
   line-height: 0.85;
   text-align: center;
 }
 
 .corner-mark.top {
-  top: 6px;
-  left: 7px;
+  top: 8px;
+  left: 9px;
 }
 
 .corner-mark.bottom {
-  bottom: 6px;
-  right: 7px;
+  bottom: 8px;
+  right: 9px;
   transform: rotate(180deg);
 }
 
@@ -250,7 +244,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 2.6rem;
+  font-size: 3.5rem;
 }
 
 /* --- Centre (turned card / trump) --- */
