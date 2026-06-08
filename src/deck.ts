@@ -95,3 +95,48 @@ export function dealBelote(seed: string): BeloteDeal {
   const talon = deck.slice(next);
   return { hands, trumpCard, talon };
 }
+
+export interface CompletedDeal {
+  /** One eight-card hand per player, in seating order. */
+  hands: Card[][];
+  /** The card that was turned up and taken into the taker's hand. */
+  trumpCard: Card;
+  /** The trump suit for the hand (the turned card's suit). */
+  trumpSuit: Suit;
+  /** Seat index of the player who took. */
+  takerSeat: number;
+}
+
+// After a take, the taker keeps the turned card and draws two more; everyone
+// else draws three. That accounts for all eleven talon cards (3 + 3 + 3 + 2).
+const TAKER_DRAW = 2;
+const OTHER_DRAW = 3;
+
+/**
+ * Complete the deal once bidding is settled and `takerSeat` has taken the
+ * turned-up card. The taker keeps that card and draws two from the talon; the
+ * other three players draw three each, leaving everyone with eight cards.
+ *
+ * Deterministic in (`seed`, `takerSeat`): every device that records the same
+ * taker produces the same eight-card hands with no duplicate cards.
+ */
+export function completeDeal(seed: string, takerSeat: number): CompletedDeal {
+  const { hands, trumpCard, talon } = dealBelote(seed);
+  const finalHands = hands.map((hand) => hand.slice());
+  finalHands[takerSeat].push(trumpCard);
+
+  let next = 0;
+  for (let seat = 0; seat < BELOTE_PLAYERS; seat++) {
+    const draw = seat === takerSeat ? TAKER_DRAW : OTHER_DRAW;
+    for (let c = 0; c < draw; c++) {
+      finalHands[seat].push(talon[next++]);
+    }
+  }
+
+  return {
+    hands: finalHands,
+    trumpCard,
+    trumpSuit: trumpCard.suit,
+    takerSeat,
+  };
+}
