@@ -91,6 +91,29 @@ h1 {
   color: #1a1a1a;
 }
 
+.card.back {
+  background: repeating-linear-gradient(
+      45deg,
+      #2a4d8f,
+      #2a4d8f 6px,
+      #3a63b0 6px,
+      #3a63b0 12px
+    );
+  border: 2px solid #fff;
+}
+
+.hand.center h2 {
+  text-transform: capitalize;
+}
+
+.cards.talon .card.back {
+  margin-left: -38px;
+}
+
+.cards.talon .card.back:first-child {
+  margin-left: 0;
+}
+
 .corner {
   position: absolute;
   font-size: 0.7rem;

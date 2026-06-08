@@ -1,8 +1,7 @@
 import "./style.css";
-import { deal, type Card, type Suit } from "./deck";
+import { dealBelote, type Card, type Suit } from "./deck";
 
 const PLAYERS = ["North", "East", "South", "West"];
-const CARDS_PER_HAND = 5;
 
 const SUIT_SYMBOL: Record<Suit, string> = {
   hearts: "♥",
@@ -27,6 +26,13 @@ function renderCard(card: Card): HTMLElement {
   return el;
 }
 
+function renderCardBack(): HTMLElement {
+  const el = document.createElement("div");
+  el.className = "card back";
+  el.setAttribute("aria-hidden", "true");
+  return el;
+}
+
 function renderHand(player: string, hand: Card[]): HTMLElement {
   const wrapper = document.createElement("div");
   wrapper.className = "hand";
@@ -45,19 +51,55 @@ function renderHand(player: string, hand: Card[]): HTMLElement {
   return wrapper;
 }
 
+function renderTrump(trumpCard: Card): HTMLElement {
+  const wrapper = document.createElement("div");
+  wrapper.className = "hand center";
+
+  const heading = document.createElement("h2");
+  heading.textContent = `Proposed trump — ${trumpCard.suit}`;
+  wrapper.appendChild(heading);
+
+  const cards = document.createElement("div");
+  cards.className = "cards";
+  cards.appendChild(renderCard(trumpCard));
+  wrapper.appendChild(cards);
+
+  return wrapper;
+}
+
+function renderTalon(count: number): HTMLElement {
+  const wrapper = document.createElement("div");
+  wrapper.className = "hand center";
+
+  const heading = document.createElement("h2");
+  heading.textContent = `Talon — ${count} cards`;
+  wrapper.appendChild(heading);
+
+  const stack = document.createElement("div");
+  stack.className = "cards talon";
+  // Show a small fanned stack rather than all 11 backs.
+  for (let i = 0; i < Math.min(count, 4); i++) {
+    stack.appendChild(renderCardBack());
+  }
+  wrapper.appendChild(stack);
+
+  return wrapper;
+}
+
 function dealAndRender(): void {
   const table = document.querySelector<HTMLElement>("#table");
   if (!table) return;
 
-  const hands = deal(PLAYERS.length, CARDS_PER_HAND);
+  const { hands, trumpCard, talon } = dealBelote();
   table.replaceChildren(
     ...PLAYERS.map((player, i) => renderHand(player, hands[i])),
+    renderTrump(trumpCard),
+    renderTalon(talon.length),
   );
 }
 
-document.querySelector<HTMLButtonElement>("#deal")?.addEventListener(
-  "click",
-  dealAndRender,
-);
+document
+  .querySelector<HTMLButtonElement>("#deal")
+  ?.addEventListener("click", dealAndRender);
 
 dealAndRender();

@@ -2,8 +2,10 @@
 
 A simple online Belote game, built with TypeScript and [Vite](https://vitejs.dev/).
 
-The current version deals 5 cards to each of the four players from a French
-32-card deck and displays each hand. Click **Deal** to shuffle and deal again.
+The current version performs a Belote opening deal from a French 32-card deck:
+3-then-2 packets of cards to each of the four players, one card turned face up
+to propose the trump suit, and the remaining 11 cards left as the talon. Click
+**Deal** to shuffle and deal again.
 
 ## Live site
 

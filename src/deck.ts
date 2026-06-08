@@ -32,18 +32,40 @@ export function shuffle<T>(cards: readonly T[]): T[] {
   return result;
 }
 
+export const BELOTE_PLAYERS = 4;
+
+// Belote's opening deal is given in packets: three cards to each player, then
+// two more, so everyone holds five cards before bidding.
+const OPENING_PACKETS = [3, 2] as const;
+
+export interface BeloteDeal {
+  /** One five-card hand per player, in seating order. */
+  hands: Card[][];
+  /** The card turned face up to propose the trump suit. */
+  trumpCard: Card;
+  /** The remaining face-down cards, dealt out after bidding. */
+  talon: Card[];
+}
+
 /**
- * Deal `cardsPerHand` cards to each of `playerCount` players from a freshly
- * shuffled deck. Returns one hand (array of cards) per player.
+ * Perform a Belote opening deal from a freshly shuffled 32-card deck: deal the
+ * 3-then-2 packets to each of the four players, turn one card face up to
+ * propose trump, and leave the rest as the talon.
  */
-export function deal(playerCount: number, cardsPerHand: number): Card[][] {
-  if (playerCount * cardsPerHand > 32) {
-    throw new Error("Not enough cards in a Belote deck for that deal.");
-  }
+export function dealBelote(): BeloteDeal {
   const deck = shuffle(createDeck());
-  const hands: Card[][] = Array.from({ length: playerCount }, () => []);
-  for (let i = 0; i < playerCount * cardsPerHand; i++) {
-    hands[i % playerCount].push(deck[i]);
+  const hands: Card[][] = Array.from({ length: BELOTE_PLAYERS }, () => []);
+
+  let next = 0;
+  for (const packetSize of OPENING_PACKETS) {
+    for (let player = 0; player < BELOTE_PLAYERS; player++) {
+      for (let c = 0; c < packetSize; c++) {
+        hands[player].push(deck[next++]);
+      }
+    }
   }
-  return hands;
+
+  const trumpCard = deck[next++];
+  const talon = deck.slice(next);
+  return { hands, trumpCard, talon };
 }
