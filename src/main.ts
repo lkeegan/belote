@@ -26,80 +26,62 @@ function renderCard(card: Card): HTMLElement {
   return el;
 }
 
-function renderCardBack(): HTMLElement {
-  const el = document.createElement("div");
-  el.className = "card back";
-  el.setAttribute("aria-hidden", "true");
-  return el;
-}
-
-function renderHand(player: string, hand: Card[]): HTMLElement {
-  const wrapper = document.createElement("div");
-  wrapper.className = "hand";
-
-  const heading = document.createElement("h2");
-  heading.textContent = player;
-  wrapper.appendChild(heading);
-
-  const cards = document.createElement("div");
-  cards.className = "cards";
-  for (const card of hand) {
-    cards.appendChild(renderCard(card));
+function cardRow(cards: Card[]): HTMLElement {
+  const row = document.createElement("div");
+  row.className = "cards";
+  for (const card of cards) {
+    row.appendChild(renderCard(card));
   }
-  wrapper.appendChild(cards);
-
-  return wrapper;
+  return row;
 }
 
-function renderTrump(trumpCard: Card): HTMLElement {
-  const wrapper = document.createElement("div");
-  wrapper.className = "hand center";
+const setup = document.querySelector<HTMLFormElement>("#setup")!;
+const result = document.querySelector<HTMLElement>("#result")!;
+
+function showResult(seed: string, seat: number): void {
+  const { hands, trumpCard } = dealBelote(seed);
+
+  result.replaceChildren();
 
   const heading = document.createElement("h2");
-  heading.textContent = `Proposed trump — ${trumpCard.suit}`;
-  wrapper.appendChild(heading);
+  heading.textContent = `${PLAYERS[seat]} — game ${seed}`;
+  result.appendChild(heading);
 
-  const cards = document.createElement("div");
-  cards.className = "cards";
-  cards.appendChild(renderCard(trumpCard));
-  wrapper.appendChild(cards);
+  const handPanel = document.createElement("div");
+  handPanel.className = "hand";
+  const handLabel = document.createElement("h3");
+  handLabel.textContent = "Your hand";
+  handPanel.append(handLabel, cardRow(hands[seat]));
+  result.appendChild(handPanel);
 
-  return wrapper;
+  const trumpPanel = document.createElement("div");
+  trumpPanel.className = "hand";
+  const trumpLabel = document.createElement("h3");
+  trumpLabel.textContent = `Proposed trump — ${trumpCard.suit}`;
+  trumpPanel.append(trumpLabel, cardRow([trumpCard]));
+  result.appendChild(trumpPanel);
+
+  const back = document.createElement("button");
+  back.type = "button";
+  back.className = "secondary";
+  back.textContent = "Change seat or game";
+  back.addEventListener("click", showSetup);
+  result.appendChild(back);
+
+  setup.hidden = true;
+  result.hidden = false;
 }
 
-function renderTalon(count: number): HTMLElement {
-  const wrapper = document.createElement("div");
-  wrapper.className = "hand center";
-
-  const heading = document.createElement("h2");
-  heading.textContent = `Talon — ${count} cards`;
-  wrapper.appendChild(heading);
-
-  const stack = document.createElement("div");
-  stack.className = "cards talon";
-  // Show a small fanned stack rather than all 11 backs.
-  for (let i = 0; i < Math.min(count, 4); i++) {
-    stack.appendChild(renderCardBack());
-  }
-  wrapper.appendChild(stack);
-
-  return wrapper;
+function showSetup(): void {
+  result.hidden = true;
+  setup.hidden = false;
 }
 
-function dealAndRender(): void {
-  const table = document.querySelector<HTMLElement>("#table");
-  if (!table) return;
-
-  const { hands, trumpCard, talon } = dealBelote();
-  table.replaceChildren(
-    ...PLAYERS.map((player, i) => renderHand(player, hands[i])),
-    renderTrump(trumpCard),
-    renderTalon(talon.length),
-  );
-}
-
-document
-  .querySelector<HTMLButtonElement>("#deal")
-  ?.addEventListener("click", dealAndRender);
-
-dealAndRender();
+setup.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const data = new FormData(setup);
+  const seed = String(data.get("seed") ?? "").trim();
+  const seat = Number(data.get("seat"));
+  if (!seed || Number.isNaN(seat)) return;
+  showResult(seed, seat);
+});

@@ -17,15 +17,12 @@ body {
 }
 
 #app {
-  max-width: 1000px;
+  max-width: 640px;
   margin: 0 auto;
   padding: 1.5rem;
 }
 
 header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
   margin-bottom: 1.5rem;
 }
 
@@ -35,9 +32,61 @@ h1 {
   letter-spacing: 0.05em;
 }
 
-#deal {
+.hint {
+  margin: 0 0 1.25rem;
+  opacity: 0.85;
+  line-height: 1.5;
+}
+
+/* --- Setup form --- */
+
+#setup {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  background: rgba(0, 0, 0, 0.18);
+  padding: 1.5rem;
+  border-radius: 12px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-weight: 600;
+}
+
+#seed {
+  font-size: 1.1rem;
+  padding: 0.6rem 0.8rem;
+  border: none;
+  border-radius: 8px;
+}
+
+.seats {
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 8px;
+  padding: 0.8rem 1rem;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.seats legend {
+  padding: 0 0.4rem;
+  font-weight: 600;
+}
+
+.seats label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+button {
   font-size: 1rem;
-  padding: 0.6rem 1.4rem;
+  padding: 0.7rem 1.4rem;
   border: none;
   border-radius: 999px;
   background: #f5c542;
@@ -47,24 +96,36 @@ h1 {
   transition: transform 0.05s ease, filter 0.15s ease;
 }
 
-#deal:hover {
+button:hover {
   filter: brightness(1.05);
 }
 
-#deal:active {
-  transform: scale(0.97);
+button:active {
+  transform: scale(0.98);
 }
 
-#table {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 1.25rem;
+button.secondary {
+  background: transparent;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.5);
 }
 
-.hand h2 {
+/* --- Result --- */
+
+#result h2 {
+  text-transform: capitalize;
+  margin: 0 0 1.25rem;
+}
+
+.hand {
+  margin-bottom: 1.5rem;
+}
+
+.hand h3 {
   margin: 0 0 0.6rem;
-  font-size: 1.1rem;
+  font-size: 1rem;
   font-weight: 600;
+  text-transform: capitalize;
 }
 
 .cards {
@@ -75,8 +136,8 @@ h1 {
 
 .card {
   position: relative;
-  width: 54px;
-  height: 78px;
+  width: 60px;
+  height: 86px;
   background: #fff;
   border-radius: 6px;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.35);
@@ -91,44 +152,21 @@ h1 {
   color: #1a1a1a;
 }
 
-.card.back {
-  background: repeating-linear-gradient(
-      45deg,
-      #2a4d8f,
-      #2a4d8f 6px,
-      #3a63b0 6px,
-      #3a63b0 12px
-    );
-  border: 2px solid #fff;
-}
-
-.hand.center h2 {
-  text-transform: capitalize;
-}
-
-.cards.talon .card.back {
-  margin-left: -38px;
-}
-
-.cards.talon .card.back:first-child {
-  margin-left: 0;
-}
-
 .corner {
   position: absolute;
-  font-size: 0.7rem;
+  font-size: 0.72rem;
   line-height: 0.9;
   text-align: center;
 }
 
 .corner.top {
   top: 4px;
-  left: 4px;
+  left: 5px;
 }
 
 .corner.bottom {
   bottom: 4px;
-  right: 4px;
+  right: 5px;
   transform: rotate(180deg);
 }
 
@@ -138,5 +176,5 @@ h1 {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.8rem;
+  font-size: 2rem;
 }

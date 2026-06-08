@@ -9,9 +9,35 @@
     <main id="app">
       <header>
         <h1>Belote</h1>
-        <button id="deal" type="button">Deal</button>
       </header>
-      <section id="table"></section>
+
+      <form id="setup">
+        <p class="hint">
+          Agree on a game number with the other players, then choose your seat.
+          Everyone who enters the same number sees the same deal.
+        </p>
+        <label class="field">
+          Game number
+          <input
+            id="seed"
+            name="seed"
+            type="number"
+            inputmode="numeric"
+            placeholder="e.g. 42"
+            required
+          />
+        </label>
+        <fieldset class="seats">
+          <legend>Your seat</legend>
+          <label><input type="radio" name="seat" value="0" required /> North</label>
+          <label><input type="radio" name="seat" value="1" /> East</label>
+          <label><input type="radio" name="seat" value="2" /> South</label>
+          <label><input type="radio" name="seat" value="3" /> West</label>
+        </fieldset>
+        <button type="submit">Show my hand</button>
+      </form>
+
+      <section id="result" hidden></section>
     </main>
     <script type="module" src="/src/main.ts"></script>
   </body>
