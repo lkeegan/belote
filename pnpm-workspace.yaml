@@ -1,0 +1,5 @@
+# Allow esbuild (a Vite dependency) to run its install script so its native
+# binary is available for builds. `allowBuilds` is pnpm v11's replacement for
+# the removed `onlyBuiltDependencies` setting.
+allowBuilds:
+  esbuild: true

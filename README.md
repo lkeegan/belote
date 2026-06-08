@@ -26,17 +26,17 @@ https://lkeegan.github.io/belote/
 
 ## Development
 
+This project uses [pnpm](https://pnpm.io/).
+
 ```bash
-npm install
-npm run dev      # start the dev server
-npm run build    # type-check and build to dist/
-npm run preview  # preview the production build
+pnpm install
+pnpm dev      # start the dev server
+pnpm build    # type-check and build to dist/
+pnpm preview  # preview the production build
 ```
 
 ## Deployment
 
-Pushing to `main` runs `.github/workflows/deploy.yml`, which builds the site and
-publishes `dist/` to GitHub Pages.
-
-**One-time setup:** in the repository settings, under **Settings → Pages → Build
-and deployment**, set the **Source** to **GitHub Actions**.
+Pushing to `main` runs `.github/workflows/deploy.yml`, which installs with pnpm,
+builds the site, and publishes `dist/` to GitHub Pages. Pages is configured to
+deploy from **GitHub Actions** (Settings → Pages → Build and deployment).
