@@ -231,7 +231,7 @@ function renderCenter(
   } else if (trumpSuit !== undefined && taker !== null) {
     const info = document.createElement("p");
     info.className = "trump-info";
-    info.innerHTML = `Atout <strong>${SUIT_SYMBOL[trumpSuit]} ${SUIT_NAME[trumpSuit]}</strong><br />pris par ${PLAYERS[taker]}`;
+    info.innerHTML = `${PLAYERS[taker]}<br />a pris à<br />${SUIT_NAME[trumpSuit]}`;
     center.appendChild(info);
   }
 

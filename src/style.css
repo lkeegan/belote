@@ -313,12 +313,9 @@ body {
 
 .trump-info {
   margin: 0;
-  font-size: 1rem;
-}
-
-.trump-info strong {
-  text-transform: capitalize;
   font-size: 1.2rem;
+  font-weight: 600;
+  line-height: 1.45;
 }
 
 /* Shrink cards on small or short screens so eight fit a corner without
@@ -370,5 +367,9 @@ body {
     width: 108px;
     height: 150px;
     padding: 0.4rem;
+  }
+
+  .trump-info {
+    font-size: 0.95rem;
   }
 }
