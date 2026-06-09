@@ -126,6 +126,15 @@ body {
   box-shadow: inset 0 0 0 3px #f5c542;
 }
 
+/* The seat whose turn it is to play. */
+.quadrant.turn {
+  box-shadow: inset 0 0 0 3px #fff;
+  background: rgba(255, 255, 255, 0.06);
+}
+.quadrant.taker.turn {
+  box-shadow: inset 0 0 0 3px #f5c542, inset 0 0 0 6px #fff;
+}
+
 .seat-head {
   display: flex;
   align-items: center;
@@ -244,6 +253,22 @@ body {
   box-shadow: 0 0 0 3px #f5c542, 0 3px 8px rgba(0, 0, 0, 0.35);
 }
 
+/* A legal card for the seat to move: lifts on hover, clearly clickable. */
+.card.playable {
+  cursor: pointer;
+  outline: 3px solid #4ade80;
+  transition: transform 0.1s ease;
+}
+.card.playable:hover {
+  transform: translateY(-8px);
+}
+
+/* A card that cannot be played this trick is dimmed and inert. */
+.card.illegal {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .card.back {
   background: repeating-linear-gradient(
     45deg,
@@ -323,6 +348,75 @@ body {
   font-size: 1.2rem;
   font-weight: 600;
   line-height: 1.45;
+}
+
+/* During play and at the result the centre grows to fit its contents. */
+.table-center.playing,
+.table-center.finished {
+  width: auto;
+  height: auto;
+  min-width: 150px;
+  max-width: 60vw;
+  gap: 0.6rem;
+}
+
+/* The cards played so far in the current trick. */
+.trick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  justify-content: center;
+}
+
+.card.mini {
+  width: 46px;
+  height: 66px;
+  border-radius: 5px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+.card.mini .pip {
+  font-size: 1.5rem;
+}
+.card.mini .corner-mark {
+  font-size: 0.7rem;
+}
+.card.mini .corner-mark.top {
+  top: 3px;
+  left: 3px;
+}
+.card.mini .corner-mark.bottom {
+  bottom: 3px;
+  right: 3px;
+}
+
+.result {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.9rem;
+}
+.result span:first-child {
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+/* --- Scoreboard --- */
+
+.scoreboard {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+.scoreboard .team.gold {
+  color: #f5c542;
+}
+.scoreboard .team.blue {
+  color: #7ac8ff;
+}
+.scoreboard .sep {
+  opacity: 0.6;
 }
 
 /* Shrink cards on small or short screens so eight fit a corner without
