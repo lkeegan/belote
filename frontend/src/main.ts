@@ -340,7 +340,7 @@ function renderBidControls(s: GameState, seat: Seat): HTMLElement {
   const passBtn = document.createElement("button");
   passBtn.type = "button";
   passBtn.className = "bid pass";
-  passBtn.textContent = "Passe";
+  passBtn.textContent = "Non";
   passBtn.addEventListener("click", () => void bid(seat, null));
   wrap.appendChild(passBtn);
 
@@ -464,7 +464,6 @@ function renderStatus(): void {
 
 function renderChangeSeat(): void {
   changeSeat.hidden = mySeat === null;
-  if (mySeat !== null) changeSeat.textContent = `Joueur : ${PLAYERS[mySeat]}`;
 }
 
 function render(): void {
