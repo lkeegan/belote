@@ -38,8 +38,12 @@ export class MyDurableObject extends DurableObject<Env> {
 	}
 }
 
-// The deployed frontend; always allowed to read the worker's responses.
-const PROD_ORIGINS = new Set(["https://keegan.ch"]);
+// The deployed frontend; always allowed to read the worker's responses. The
+// site is served from www.keegan.ch; the apex is included in case it is used.
+const PROD_ORIGINS = new Set([
+	"https://www.keegan.ch",
+	"https://keegan.ch",
+]);
 
 // The local Vite dev and preview servers; only allowed when the worker itself
 // is running locally (under `wrangler dev`), never in production.
