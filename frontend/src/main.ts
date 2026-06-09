@@ -394,7 +394,7 @@ function renderCenter(s: GameState): HTMLElement {
     label.textContent = `Retourne — ${SUIT_NAME[s.trumpCard.suit]}`;
     const round = document.createElement("span");
     round.className = "label";
-    round.textContent = `${s.biddingRound === 1 ? "1er" : "2e"} tour — au tour de ${PLAYERS[s.turn]}`;
+    round.textContent = `${s.biddingRound === 1 ? "1er" : "2e"} tour — à ${PLAYERS[s.turn]} de parler`;
     center.append(label, renderCard(s.trumpCard, { trump: true }), round);
     return center;
   }
