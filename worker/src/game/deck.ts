@@ -77,13 +77,13 @@ export interface BeloteDeal {
 }
 
 /**
- * Perform a Belote opening deal from a 32-card deck shuffled with `seed`: deal
+ * Perform a Belote opening deal from a 32-card deck shuffled with `rng`: deal
  * the 3-then-2 packets to each of the four players, turn one card face up to
- * propose trump, and leave the rest as the talon. The same seed always yields
- * the same deal.
+ * propose trump, and leave the rest as the talon. Defaults to a random deal;
+ * pass a seeded `makeRng` to get a deterministic one (used in tests).
  */
-export function dealBelote(seed: string): BeloteDeal {
-  const deck = shuffle(createDeck(), makeRng(seed));
+export function dealBelote(rng: Rng = Math.random): BeloteDeal {
+  const deck = shuffle(createDeck(), rng);
   const hands: Card[][] = Array.from({ length: BELOTE_PLAYERS }, () => []);
 
   let next = 0;
@@ -100,32 +100,18 @@ export function dealBelote(seed: string): BeloteDeal {
   return { hands, trumpCard, talon };
 }
 
-export interface CompletedDeal {
-  /** One eight-card hand per player, in seating order. */
-  hands: Card[][];
-  /** The card that was turned up and taken into the taker's hand. */
-  trumpCard: Card;
-  /** The trump suit for the hand (the turned card's suit). */
-  trumpSuit: Suit;
-  /** Seat index of the player who took. */
-  takerSeat: number;
-}
-
 // After a take, the taker keeps the turned card and draws two more; everyone
 // else draws three. That accounts for all eleven talon cards (3 + 3 + 3 + 2).
 const TAKER_DRAW = 2;
 const OTHER_DRAW = 3;
 
 /**
- * Complete the deal once bidding is settled and `takerSeat` has taken the
- * turned-up card. The taker keeps that card and draws two from the talon; the
- * other three players draw three each, leaving everyone with eight cards.
- *
- * Deterministic in (`seed`, `takerSeat`): every device that records the same
- * taker produces the same eight-card hands with no duplicate cards.
+ * Complete a `deal` once `takerSeat` has taken: the taker keeps the turned-up
+ * card and draws two from the talon; the other three players draw three each,
+ * leaving everyone with eight cards. Returns the four completed hands.
  */
-export function completeDeal(seed: string, takerSeat: number): CompletedDeal {
-  const { hands, trumpCard, talon } = dealBelote(seed);
+export function completeDeal(deal: BeloteDeal, takerSeat: number): Card[][] {
+  const { hands, trumpCard, talon } = deal;
   const finalHands = hands.map((hand) => hand.slice());
   finalHands[takerSeat].push(trumpCard);
 
@@ -137,10 +123,5 @@ export function completeDeal(seed: string, takerSeat: number): CompletedDeal {
     }
   }
 
-  return {
-    hands: finalHands,
-    trumpCard,
-    trumpSuit: trumpCard.suit,
-    takerSeat,
-  };
+  return finalHands;
 }

@@ -85,12 +85,8 @@ function parseAction(
 ): { action: Action } | { error: string } {
   const b = (body ?? {}) as Record<string, unknown>;
   switch (path) {
-    case "/new": {
-      const seed = b.seed;
-      if (seed !== undefined && typeof seed !== "string")
-        return { error: "seed must be a string" };
-      return { action: { type: "new", seed } };
-    }
+    case "/new":
+      return { action: { type: "new" } };
     case "/bid": {
       const seat = asSeat(b.seat);
       if (seat === null) return { error: "seat must be 0–3" };

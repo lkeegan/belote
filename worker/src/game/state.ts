@@ -4,7 +4,15 @@
 // either the next state or a validation error. All the rules live here and in
 // rules.ts / scoring.ts, so the Durable Object stays a thin persistence layer.
 
-import { type Card, type Suit, SUITS, dealBelote, completeDeal } from "./deck";
+import {
+  type BeloteDeal,
+  type Card,
+  type Rng,
+  type Suit,
+  SUITS,
+  dealBelote,
+  completeDeal,
+} from "./deck";
 import {
   type Seat,
   type TrickPlay,
@@ -19,13 +27,14 @@ export type Phase = "bidding" | "playing" | "finished";
 
 export interface GameState {
   phase: Phase;
-  seed: string;
-  /** Seat that opens (leads the first trick): game number mod 4. */
+  /** Seat that opens (bids first and leads the first trick); rotates each deal. */
   opener: Seat;
   /** Four hands, all visible (no hidden information). Cards leave as they're played. */
   hands: Card[][];
   /** The turned-up card proposing trump (the retourne). */
   trumpCard: Card;
+  /** Face-down cards drawn to complete the hands once someone takes. */
+  talon: Card[];
   /** Trump suit, set once someone takes. */
   trump: Suit | null;
   taker: Seat | null;
@@ -44,7 +53,7 @@ export interface GameState {
 }
 
 export type Action =
-  | { type: "new"; seed?: string }
+  | { type: "new" }
   // A bid: `suit === null` passes; otherwise the seat takes at that suit.
   | { type: "bid"; seat: Seat; suit: Suit | null }
   | { type: "play"; seat: Seat; card: Card }
@@ -56,39 +65,15 @@ export type ReduceResult =
 
 const TRICKS_PER_HAND = 8;
 
-// Reserve the last two digits as a game-of-day counter, matching the frontend's
-// encoding so the worker's default game number agrees with the UI's.
-const GAMES_PER_DAY = 100;
-
-/**
- * Default game number for the day. Encoded as
- * ((year - 2026) * 10000 + month * 100 + day) * 100 — the same scheme the
- * frontend uses, so everyone playing that day shares a number.
- */
-export function todaySeed(): string {
-  const d = new Date();
-  const dateCode =
-    (d.getFullYear() - 2026) * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
-  return String(dateCode * GAMES_PER_DAY);
-}
-
-/** Seat that opens the hand: game number mod 4, rotating each game. */
-export function openerOf(seed: string): Seat {
-  const n = parseInt(seed, 10);
-  if (Number.isNaN(n)) return 0;
-  return ((((n % 4) + 4) % 4) as Seat);
-}
-
-/** Deal a fresh hand from `seed` and enter the bidding phase. */
-export function createGame(seed: string): GameState {
-  const { hands, trumpCard } = dealBelote(seed);
-  const opener = openerOf(seed);
+/** Deal a fresh random hand opened by `opener` and enter the bidding phase. */
+export function createGame(opener: Seat, rng: Rng = Math.random): GameState {
+  const { hands, trumpCard, talon } = dealBelote(rng);
   return {
     phase: "bidding",
-    seed,
     opener,
     hands,
     trumpCard,
+    talon,
     trump: null,
     taker: null,
     turn: opener,
@@ -108,12 +93,22 @@ function err(message: string): ReduceResult {
   return { ok: false, error: message };
 }
 
+/** Deal the next hand: rotate the opener one seat clockwise, keep the scores. */
+function dealNext(prev: GameState, rng: Rng): GameState {
+  const game = createGame(nextSeat(prev.opener), rng);
+  game.scores = [...prev.scores];
+  return game;
+}
+
 /** Apply an action to the state, returning the next state or a validation error. */
-export function reduce(state: GameState | null, action: Action): ReduceResult {
+export function reduce(
+  state: GameState | null,
+  action: Action,
+  rng: Rng = Math.random,
+): ReduceResult {
   if (action.type === "new") {
-    const game = createGame(action.seed ?? todaySeed());
-    // Carry cumulative scores across games; the "clear" action resets them.
-    if (state) game.scores = [...state.scores];
+    // The first deal opens with seat 0; later deals rotate clockwise.
+    const game = state ? dealNext(state, rng) : createGame(0, rng);
     return { ok: true, state: game };
   }
 
@@ -121,7 +116,7 @@ export function reduce(state: GameState | null, action: Action): ReduceResult {
 
   switch (action.type) {
     case "bid":
-      return bid(state, action.seat, action.suit);
+      return bid(state, action.seat, action.suit, rng);
     case "play":
       return play(state, action.seat, action.card);
     case "clear":
@@ -135,7 +130,12 @@ export function reduce(state: GameState | null, action: Action): ReduceResult {
  * Four passes ends the round: round 1 opens round 2, round 2 deals the next
  * hand (keeping the running scores).
  */
-function bid(state: GameState, seat: Seat, suit: Suit | null): ReduceResult {
+function bid(
+  state: GameState,
+  seat: Seat,
+  suit: Suit | null,
+  rng: Rng,
+): ReduceResult {
   if (state.phase !== "bidding") return err("not in bidding phase");
   if (!isSeat(seat)) return err("invalid seat");
   if (seat !== state.turn) return err("not your turn");
@@ -152,10 +152,8 @@ function bid(state: GameState, seat: Seat, suit: Suit | null): ReduceResult {
         state: { ...state, biddingRound: 2, passes: 0, turn: state.opener },
       };
     }
-    // Passed twice over: redeal the next hand, keeping cumulative scores.
-    const next = createGame(String((parseInt(state.seed, 10) || 0) + 1));
-    next.scores = [...state.scores];
-    return { ok: true, state: next };
+    // Passed twice over: deal the next hand.
+    return { ok: true, state: dealNext(state, rng) };
   }
 
   if (!SUITS.includes(suit)) return err("invalid suit");
@@ -164,7 +162,12 @@ function bid(state: GameState, seat: Seat, suit: Suit | null): ReduceResult {
   if (state.biddingRound === 2 && suit === state.trumpCard.suit)
     return err("second round must name a different suit");
 
-  const { hands } = completeDeal(state.seed, seat);
+  const deal: BeloteDeal = {
+    hands: state.hands,
+    trumpCard: state.trumpCard,
+    talon: state.talon,
+  };
+  const hands = completeDeal(deal, seat);
   return {
     ok: true,
     state: {
@@ -174,6 +177,7 @@ function bid(state: GameState, seat: Seat, suit: Suit | null): ReduceResult {
       trump: suit,
       taker: seat,
       turn: state.opener,
+      talon: [], // dealt out into the hands
       currentTrick: [],
       tricks: [],
     },

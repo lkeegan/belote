@@ -14,9 +14,9 @@ const post = (path: string, body?: unknown) =>
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 
-/** Deal `seed`, then have the opener take the retourne suit (enter playing). */
-async function newAndTake(seed: string): Promise<ClientState> {
-  const dealt = (await (await post("/new", { seed })).json()) as GameState;
+/** Deal, then have the opener take the retourne suit (enter playing). */
+async function newAndTake(): Promise<ClientState> {
+  const dealt = (await (await post("/new")).json()) as GameState;
   return (await (
     await post("/bid", { seat: dealt.opener, suit: dealt.trumpCard.suit })
   ).json()) as ClientState;
@@ -30,20 +30,20 @@ describe("HTTP layer", () => {
   });
 
   it("deals on POST /new and persists across requests", async () => {
-    const created = await post("/new", { seed: "42" });
+    const created = await post("/new");
     expect(created.status).toBe(200);
     const state = (await created.json()) as GameState;
     expect(state.phase).toBe("bidding");
-    expect(state.seed).toBe("42");
+    expect(state.opener).toBe(0); // first deal opens with seat 0
 
     // A separate request sees the same persisted game.
     const fetched = (await (await get("/state")).json()) as GameState;
-    expect(fetched.seed).toBe("42");
     expect(fetched.phase).toBe("bidding");
+    expect(fetched.hands.every((h) => h.length === 5)).toBe(true);
   });
 
   it("takes the contract and rejects out-of-turn / illegal moves", async () => {
-    const taken = await newAndTake("42");
+    const taken = await newAndTake();
     expect(taken.phase).toBe("playing");
     expect(taken.hands.every((h) => h.length === 8)).toBe(true);
 
@@ -58,7 +58,7 @@ describe("HTTP layer", () => {
   });
 
   it("plays a full hand through to a finished score", async () => {
-    let state: GameState = await newAndTake("42");
+    let state: GameState = await newAndTake();
     let guard = 0;
     while (state.phase === "playing") {
       expect(guard++).toBeLessThan(40);
@@ -77,30 +77,31 @@ describe("HTTP layer", () => {
     expect(state.result).toBeDefined();
     expect(state.scores).toEqual(state.result!.handPoints);
 
-    // A new game keeps the cumulative scores; /clear resets them.
-    const carried = (await (await post("/new", { seed: "43" })).json()) as GameState;
+    // A new deal keeps the cumulative scores; /clear resets them.
+    const carried = (await (await post("/new")).json()) as GameState;
     expect(carried.scores).toEqual(state.scores);
     const cleared = (await (await post("/clear")).json()) as GameState;
     expect(cleared.scores).toEqual([0, 0]);
   });
 
   it("includes the current turn's legal cards while playing", async () => {
-    const playing = await newAndTake("42");
+    const playing = await newAndTake();
     // The opener leads, so every card in hand is legal.
     expect(playing.legal).toHaveLength(8);
 
-    const bidding = (await (await post("/new", { seed: "42" })).json()) as ClientState;
+    const bidding = (await (await post("/new")).json()) as ClientState;
     expect(bidding.legal).toEqual([]); // no legal moves before a take
   });
 
-  it("deals the next hand when everyone passes twice", async () => {
-    let s = (await (await post("/new", { seed: "42" })).json()) as GameState;
+  it("deals the next hand (rotating the opener) when everyone passes twice", async () => {
+    let s = (await (await post("/new")).json()) as GameState;
+    const firstOpener = s.opener;
     for (let i = 0; i < 8; i++) {
       s = (await (await post("/bid", { seat: s.turn, suit: null })).json()) as GameState;
     }
     expect(s.phase).toBe("bidding");
     expect(s.biddingRound).toBe(1);
-    expect(s.seed).toBe("43");
+    expect(s.opener).toBe((firstOpener + 1) % 4);
   });
 
   it("validates request bodies", async () => {

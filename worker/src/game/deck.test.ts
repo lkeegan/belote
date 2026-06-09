@@ -67,7 +67,7 @@ describe("shuffle", () => {
 
 describe("dealBelote", () => {
   it("deals four five-card hands, a trump card, and an 11-card talon", () => {
-    const { hands, trumpCard, talon } = dealBelote("42");
+    const { hands, trumpCard, talon } = dealBelote(makeRng("42"));
     expect(hands).toHaveLength(BELOTE_PLAYERS);
     for (const hand of hands) expect(hand).toHaveLength(5);
     expect(talon).toHaveLength(11);
@@ -75,15 +75,15 @@ describe("dealBelote", () => {
   });
 
   it("uses all 32 cards exactly once", () => {
-    const { hands, trumpCard, talon } = dealBelote("42");
+    const { hands, trumpCard, talon } = dealBelote(makeRng("42"));
     const all = [...hands.flat(), trumpCard, ...talon];
     expect(all).toHaveLength(32);
     expect(new Set(keys(all)).size).toBe(32);
   });
 
-  it("is deterministic per seed and varies across seeds", () => {
+  it("is deterministic for a given rng and varies with the seed", () => {
     const flat = (s: string) => {
-      const d = dealBelote(s);
+      const d = dealBelote(makeRng(s));
       return keys([...d.hands.flat(), d.trumpCard, ...d.talon]);
     };
     expect(flat("42")).toEqual(flat("42"));
@@ -94,7 +94,7 @@ describe("dealBelote", () => {
 describe("completeDeal", () => {
   it("gives every player eight cards using all 32 once, for any taker", () => {
     for (let taker = 0; taker < BELOTE_PLAYERS; taker++) {
-      const { hands } = completeDeal("42", taker);
+      const hands = completeDeal(dealBelote(makeRng("42")), taker);
       const all = hands.flat();
       expect(hands.every((h) => h.length === 8)).toBe(true);
       expect(all).toHaveLength(32);
@@ -103,9 +103,9 @@ describe("completeDeal", () => {
   });
 
   it("gives the taker the turned card plus two, others three", () => {
-    const opening = dealBelote("42");
+    const opening = dealBelote(makeRng("42"));
     const taker = 1;
-    const { hands, trumpCard } = completeDeal("42", taker);
+    const hands = completeDeal(opening, taker);
 
     // Each final hand extends that player's opening hand.
     for (let seat = 0; seat < BELOTE_PLAYERS; seat++) {
@@ -113,10 +113,10 @@ describe("completeDeal", () => {
     }
 
     // The taker holds the turned-up card; others do not.
-    expect(keys(hands[taker])).toContain(key(trumpCard));
+    expect(keys(hands[taker])).toContain(key(opening.trumpCard));
     for (let seat = 0; seat < BELOTE_PLAYERS; seat++) {
       if (seat === taker) continue;
-      expect(keys(hands[seat])).not.toContain(key(trumpCard));
+      expect(keys(hands[seat])).not.toContain(key(opening.trumpCard));
     }
 
     // Taker drew 2 from the talon (5 + turned + 2), others drew 3.
@@ -127,14 +127,10 @@ describe("completeDeal", () => {
     }
   });
 
-  it("reports the trump suit as the turned card's suit", () => {
-    const { trumpCard, trumpSuit } = completeDeal("42", 0);
-    expect(trumpSuit).toBe(trumpCard.suit);
-  });
-
-  it("is deterministic in (seed, taker)", () => {
-    expect(keys(completeDeal("42", 2).hands.flat())).toEqual(
-      keys(completeDeal("42", 2).hands.flat()),
+  it("is deterministic for a given deal and taker", () => {
+    const deal = dealBelote(makeRng("42"));
+    expect(keys(completeDeal(deal, 2).flat())).toEqual(
+      keys(completeDeal(deal, 2).flat()),
     );
   });
 });

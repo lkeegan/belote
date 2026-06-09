@@ -1,39 +1,36 @@
 import { describe, it, expect } from "vitest";
-import { type Card, type Suit, SUITS } from "./deck";
-import { type Seat, legalMoves } from "./rules";
-import {
-  type GameState,
-  createGame,
-  openerOf,
-  reduce,
-} from "./state";
+import { type Card, type Suit, SUITS, makeRng } from "./deck";
+import { type Seat, legalMoves, nextSeat } from "./rules";
+import { type GameState, createGame, reduce } from "./state";
 
 const handSizes = (s: GameState) => s.hands.map((h) => h.length);
 
-describe("openerOf / createGame", () => {
-  it("opens with game number mod 4", () => {
-    expect(openerOf("40")).toBe(0);
-    expect(openerOf("41")).toBe(1);
-    expect(openerOf("43")).toBe(3);
-    expect(openerOf("not-a-number")).toBe(0);
-  });
+/** A deterministic deal for tests: fixed opener and seeded shuffle. */
+const deal = (opener: Seat = 0, seed = "seed"): GameState =>
+  createGame(opener, makeRng(seed));
 
-  it("deals a five-card bidding hand to everyone", () => {
-    const s = createGame("42");
+describe("createGame", () => {
+  it("deals a five-card bidding hand to everyone, opened by `opener`", () => {
+    const s = deal(2);
     expect(s.phase).toBe("bidding");
     expect(handSizes(s)).toEqual([5, 5, 5, 5]);
+    expect(s.talon).toHaveLength(11);
+    expect(s.opener).toBe(2);
+    expect(s.turn).toBe(2);
     expect(s.trump).toBe(null);
     expect(s.taker).toBe(null);
-    expect(s.turn).toBe(s.opener);
     expect(s.scores).toEqual([0, 0]);
   });
 });
 
 describe("reduce — new and guards", () => {
-  it("creates a fresh game for an explicit seed", () => {
-    const r = reduce(null, { type: "new", seed: "42" });
+  it("opens the first deal with seat 0 and zero scores", () => {
+    const r = reduce(null, { type: "new" });
     expect(r.ok).toBe(true);
-    if (r.ok) expect(r.state.seed).toBe("42");
+    if (!r.ok) return;
+    expect(r.state.phase).toBe("bidding");
+    expect(r.state.opener).toBe(0);
+    expect(r.state.scores).toEqual([0, 0]);
   });
 
   it("rejects actions when there is no game", () => {
@@ -41,28 +38,24 @@ describe("reduce — new and guards", () => {
     expect(r).toEqual({ ok: false, error: "no game in progress" });
   });
 
-  it("starts the first game with zero scores", () => {
-    const r = reduce(null, { type: "new", seed: "42" });
-    expect(r.ok && r.state.scores).toEqual([0, 0]);
-  });
-
-  it("carries cumulative scores into a new game", () => {
-    const prev = { ...createGame("42"), scores: [120, 42] as [number, number] };
-    const r = reduce(prev, { type: "new", seed: "43" });
+  it("rotates the opener clockwise and carries scores into a new deal", () => {
+    const prev = { ...deal(1), scores: [120, 42] as [number, number] };
+    const r = reduce(prev, { type: "new" });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.state.seed).toBe("43");
+    expect(r.state.opener).toBe(2); // 1 -> 2, clockwise
+    expect(r.state.turn).toBe(2);
     expect(r.state.scores).toEqual([120, 42]); // accumulated, not reset
-    expect(r.state.phase).toBe("bidding"); // a fresh hand
+    expect(r.state.phase).toBe("bidding");
   });
 
-  it("clears accumulated scores", () => {
-    const playing = { ...createGame("42"), scores: [120, 42] as [number, number] };
+  it("clears accumulated scores without redealing", () => {
+    const playing = { ...deal(0), scores: [120, 42] as [number, number] };
     const r = reduce(playing, { type: "clear" });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.state.scores).toEqual([0, 0]);
-    expect(r.state.seed).toBe("42"); // same game, only scores reset
+    expect(r.state.hands).toEqual(playing.hands); // same deal, only scores reset
   });
 
   it("rejects clear when there is no game", () => {
@@ -82,29 +75,24 @@ function passOnce(s: GameState): GameState {
 
 describe("reduce — bidding", () => {
   it("advances the turn on a pass", () => {
-    const s = createGame("42");
+    const s = deal(0);
     const r = reduce(s, { type: "bid", seat: s.opener, suit: null });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.state.phase).toBe("bidding");
-    expect(r.state.turn).toBe(((s.opener + 1) % 4) as Seat);
+    expect(r.state.turn).toBe(nextSeat(s.opener));
     expect(r.state.passes).toBe(1);
   });
 
   it("rejects a bid out of turn", () => {
-    const s = createGame("42");
-    const offTurn = ((s.opener + 1) % 4) as Seat;
-    const r = reduce(s, { type: "bid", seat: offTurn, suit: null });
+    const s = deal(0);
+    const r = reduce(s, { type: "bid", seat: nextSeat(s.opener), suit: null });
     expect(r).toEqual({ ok: false, error: "not your turn" });
   });
 
   it("takes the retourne suit in the first round and enters playing", () => {
-    const s = createGame("42");
-    const r = reduce(s, {
-      type: "bid",
-      seat: s.opener,
-      suit: s.trumpCard.suit,
-    });
+    const s = deal(0);
+    const r = reduce(s, { type: "bid", seat: s.opener, suit: s.trumpCard.suit });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.state.phase).toBe("playing");
@@ -115,14 +103,14 @@ describe("reduce — bidding", () => {
   });
 
   it("rejects taking a different suit in the first round", () => {
-    const s = createGame("42");
+    const s = deal(0);
     const other = SUITS.find((x) => x !== s.trumpCard.suit)!;
     const r = reduce(s, { type: "bid", seat: s.opener, suit: other });
     expect(r).toEqual({ ok: false, error: "first round takes the turned-up suit" });
   });
 
   it("opens the second round after four passes", () => {
-    let s = createGame("42");
+    let s = deal(0);
     for (let i = 0; i < 4; i++) s = passOnce(s);
     expect(s.phase).toBe("bidding");
     expect(s.biddingRound).toBe(2);
@@ -131,7 +119,7 @@ describe("reduce — bidding", () => {
   });
 
   it("takes a different suit in the second round", () => {
-    let s = createGame("42");
+    let s = deal(0);
     const retourne = s.trumpCard.suit;
     for (let i = 0; i < 4; i++) s = passOnce(s);
     const other = SUITS.find((x) => x !== retourne)!;
@@ -144,7 +132,7 @@ describe("reduce — bidding", () => {
   });
 
   it("rejects taking the retourne suit in the second round", () => {
-    let s = createGame("42");
+    let s = deal(0);
     const retourne = s.trumpCard.suit;
     for (let i = 0; i < 4; i++) s = passOnce(s);
     const r = reduce(s, { type: "bid", seat: s.opener, suit: retourne });
@@ -154,18 +142,19 @@ describe("reduce — bidding", () => {
     });
   });
 
-  it("deals the next hand when everyone passes twice", () => {
-    let s = { ...createGame("42"), scores: [50, 30] as [number, number] };
+  it("deals the next hand (rotating the opener) when everyone passes twice", () => {
+    const start = { ...deal(0), scores: [50, 30] as [number, number] };
+    let s = start;
     for (let i = 0; i < 8; i++) s = passOnce(s);
     expect(s.phase).toBe("bidding");
     expect(s.biddingRound).toBe(1);
-    expect(s.seed).toBe("43"); // next hand
+    expect(s.opener).toBe(nextSeat(start.opener)); // dealer moves on
     expect(s.scores).toEqual([50, 30]); // scores carried over
     expect(handSizes(s)).toEqual([5, 5, 5, 5]);
   });
 
   it("does not mutate the input state", () => {
-    const s = createGame("42");
+    const s = deal(0);
     const before = JSON.stringify(s);
     reduce(s, { type: "bid", seat: s.opener, suit: s.trumpCard.suit });
     expect(JSON.stringify(s)).toBe(before);
@@ -175,7 +164,7 @@ describe("reduce — bidding", () => {
 describe("reduce — play validation", () => {
   // A crafted mid-trick state: spades led, seat 1 to move holding a spade.
   const craftTrick = (): GameState => ({
-    ...createGame("42"),
+    ...deal(0),
     phase: "playing",
     trump: "hearts" as Suit,
     taker: 0,
@@ -233,9 +222,9 @@ describe("reduce — play validation", () => {
   });
 });
 
-/** Create a game and have the opener take the retourne suit (enter playing). */
-function takeGame(seed: string): GameState {
-  const g = createGame(seed);
+/** Deal (seeded) and have the opener take the retourne suit (enter playing). */
+function takeGame(seed: string, opener: Seat = 0): GameState {
+  const g = createGame(opener, makeRng(seed));
   const r = reduce(g, { type: "bid", seat: g.opener, suit: g.trumpCard.suit });
   if (!r.ok) throw new Error(r.error);
   return r.state;
@@ -279,7 +268,7 @@ describe("reduce — a full hand", () => {
     expect(final.scores).toEqual(final.result!.handPoints);
   });
 
-  it("is deterministic for a given seed and taker", () => {
+  it("is deterministic for a given deal and taker", () => {
     const run = () => playToFinish(takeGame("77")).scores;
     expect(run()).toEqual(run());
   });

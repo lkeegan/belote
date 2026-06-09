@@ -48,21 +48,6 @@ body {
   letter-spacing: 0.05em;
 }
 
-.seed-field {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-weight: 600;
-}
-
-.seed-field input {
-  font-size: 1rem;
-  padding: 0.4rem 0.6rem;
-  border: none;
-  border-radius: 6px;
-  width: 7rem;
-}
-
 /* --- Table --- */
 
 #table {
