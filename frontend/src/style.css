@@ -447,7 +447,8 @@ body {
 }
 
 /* A played card, full size, tucked into the quadrant corner nearest the table
-   centre so it's obvious who played it. */
+   centre so it's obvious who played it. --fx/--fy point back toward the hand
+   (the quadrant's outer corner), so a freshly played card slides in from there. */
 .played {
   position: absolute;
   z-index: 2;
@@ -456,18 +457,46 @@ body {
 .corner-tl .played {
   bottom: 0.6rem;
   right: 0.6rem;
+  --fx: -11vmin;
+  --fy: -15vmin;
 }
 .corner-tr .played {
   bottom: 0.6rem;
   left: 0.6rem;
+  --fx: 11vmin;
+  --fy: -15vmin;
 }
 .corner-bl .played {
   top: 0.6rem;
   right: 0.6rem;
+  --fx: -11vmin;
+  --fy: 15vmin;
 }
 .corner-br .played {
   top: 0.6rem;
   left: 0.6rem;
+  --fx: 11vmin;
+  --fy: 15vmin;
+}
+
+/* Slide a freshly played card from the hand into its corner. */
+.played.deal-in {
+  animation: play-card 0.3s ease-out;
+}
+@keyframes play-card {
+  from {
+    transform: translate(var(--fx, 0), var(--fy, 0)) scale(0.9);
+    opacity: 0;
+  }
+  to {
+    transform: translate(0, 0) scale(1);
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .played.deal-in {
+    animation: none;
+  }
 }
 
 /* --- Scoreboard --- */
