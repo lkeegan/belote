@@ -57,8 +57,12 @@ export default {
 
 		// Call the `sayHello()` RPC method on the stub to invoke the method on
 		// the remote Durable Object instance.
-		const greeting = await stub.sayHello("world");
+		const greeting = await stub.sayHello("belote");
 
-		return new Response(greeting);
+		// Allow the GitHub Pages frontend (a different origin) to read the
+		// response from the browser.
+		return new Response(greeting, {
+			headers: { "Access-Control-Allow-Origin": "*" },
+		});
 	},
 } satisfies ExportedHandler<Env>;

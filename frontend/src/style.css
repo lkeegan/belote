@@ -185,6 +185,13 @@ body {
   filter: brightness(1.07);
 }
 
+.worker-msg {
+  margin-left: auto;
+  font-size: 0.9rem;
+  opacity: 0.8;
+  font-style: italic;
+}
+
 .hand-area {
   display: flex;
   flex-direction: column;
