@@ -57,7 +57,6 @@ interface CardOptions {
   trump?: boolean;
   playable?: boolean;
   illegal?: boolean;
-  mini?: boolean;
   onPlay?: () => void;
 }
 
@@ -67,7 +66,6 @@ function renderCard(card: Card, opts: CardOptions = {}): HTMLElement {
     "card",
     isRed(card.suit) ? "red" : "black",
     opts.trump ? "trump" : "",
-    opts.mini ? "mini" : "",
     opts.playable ? "playable" : "",
     opts.illegal ? "illegal" : "",
   ]
@@ -254,6 +252,7 @@ const table = document.querySelector<HTMLElement>("#table")!;
 const scoreboard = document.querySelector<HTMLElement>("#scoreboard")!;
 const clearBtn = document.querySelector<HTMLButtonElement>("#clear-scores")!;
 const changeSeat = document.querySelector<HTMLButtonElement>("#change-seat")!;
+const statusEl = document.querySelector<HTMLElement>("#status")!;
 const workerMsg = document.querySelector<HTMLElement>("#worker-msg")!;
 
 function renderQuadrant(seat: Seat, s: GameState): HTMLElement {
@@ -325,6 +324,16 @@ function renderQuadrant(seat: Seat, s: GameState): HTMLElement {
 
   q.append(head, area);
 
+  // The card this seat has played to the current trick, shown full-size in the
+  // quadrant's inner corner (nearest the table centre) so it's clear who played
+  // what.
+  const played = s.currentTrick.find((p) => p.seat === seat)?.card;
+  if (played) {
+    const pc = renderCard(played, { trump: played.suit === s.trump });
+    pc.classList.add("played");
+    q.appendChild(pc);
+  }
+
   // Your bid controls, shown only on your turn during bidding.
   if (bidding && mine && s.turn === seat) {
     q.appendChild(renderBidControls(s, seat));
@@ -384,66 +393,41 @@ function renderSeatSelect(): HTMLElement {
   return wrap;
 }
 
-function renderCenter(s: GameState): HTMLElement {
-  const center = document.createElement("div");
-  center.className = `table-center ${s.phase}`;
-
-  if (s.phase === "bidding") {
-    const label = document.createElement("span");
-    label.className = "label";
-    label.textContent = `Retourne — ${SUIT_NAME[s.trumpCard.suit]}`;
-    const round = document.createElement("span");
-    round.className = "label";
-    round.textContent = `${s.biddingRound === 1 ? "1er" : "2e"} tour — à ${PLAYERS[s.turn]} de parler`;
-    center.append(label, renderCard(s.trumpCard, { trump: true }), round);
-    return center;
-  }
-
-  // playing / finished: trump line, current trick, and turn or result.
-  if (s.trump !== null && s.taker !== null) {
-    const info = document.createElement("p");
-    info.className = "trump-info";
-    info.innerHTML = `Atout ${SUIT_SYMBOL[s.trump]}<br />${PLAYERS[s.taker]} a pris`;
-    center.appendChild(info);
-  }
-
-  if (s.currentTrick.length > 0) {
-    const trick = document.createElement("div");
-    trick.className = "trick";
-    for (const { card } of s.currentTrick) {
-      trick.appendChild(renderCard(card, { mini: true, trump: card.suit === s.trump }));
-    }
-    center.appendChild(trick);
-  }
-
-  if (s.phase === "playing") {
-    const turn = document.createElement("span");
-    turn.className = "label";
-    turn.textContent = `à ${PLAYERS[s.turn]} de jouer`;
-    center.appendChild(turn);
-  } else if (s.result) {
-    center.appendChild(renderResult(s.result, s.taker!));
-  }
-
-  return center;
+/** The turned-up card, shown in the middle of the table during bidding. */
+function renderRetourne(s: GameState): HTMLElement {
+  const card = renderCard(s.trumpCard, { trump: true });
+  card.classList.add("retourne");
+  return card;
 }
 
-function renderResult(r: HandResult, taker: Seat): HTMLElement {
-  const box = document.createElement("div");
-  box.className = "result";
-  const head = r.capot
-    ? "Capot !"
-    : r.madeContract
-      ? "Contrat réussi"
-      : "Chute (dedans)";
-  const lines = [
-    head,
-    `Preneur : ${PLAYERS[taker]}`,
-    `${r.handPoints[0]} – ${r.handPoints[1]}`,
-  ];
-  if (r.beloteTeam !== null) lines.push("Belote-rebelote +20");
-  box.innerHTML = lines.map((l) => `<span>${l}</span>`).join("");
-  return box;
+/** A coloured suit symbol for the title-bar status line. */
+function suitHtml(suit: Suit): string {
+  return `<span class="suit ${isRed(suit) ? "red" : "black"}">${SUIT_SYMBOL[suit]}</span>`;
+}
+
+/** Phase-appropriate status text, shown in the title bar. */
+function renderHeaderStatus(s: GameState | null): void {
+  if (!s) {
+    statusEl.innerHTML = "";
+    return;
+  }
+  if (s.phase === "bidding") {
+    const round = s.biddingRound === 1 ? "1er" : "2e";
+    statusEl.innerHTML = `Retourne ${suitHtml(s.trumpCard.suit)} · ${round} tour · à ${PLAYERS[s.turn]} de parler`;
+  } else if (s.phase === "playing" && s.trump !== null && s.taker !== null) {
+    statusEl.innerHTML = `Atout ${suitHtml(s.trump)} · ${PLAYERS[s.taker]} a pris · à ${PLAYERS[s.turn]} de jouer`;
+  } else if (s.phase === "finished" && s.result) {
+    const r = s.result;
+    const head = r.capot
+      ? "Capot !"
+      : r.madeContract
+        ? "Contrat réussi"
+        : "Chute (dedans)";
+    const belote = r.beloteTeam !== null ? " · Belote" : "";
+    statusEl.innerHTML = `${head} · preneur ${PLAYERS[s.taker!]} · ${r.handPoints[0]}–${r.handPoints[1]}${belote}`;
+  } else {
+    statusEl.innerHTML = "";
+  }
 }
 
 function renderScoreboard(s: GameState | null): void {
@@ -470,6 +454,7 @@ function render(): void {
   renderStatus();
   renderScoreboard(state);
   renderChangeSeat();
+  renderHeaderStatus(mySeat === null ? null : state);
   table.replaceChildren();
 
   // Choose a seat before anything else; this device plays only for it.
@@ -491,7 +476,9 @@ function render(): void {
   for (let seat = 0; seat < PLAYERS.length; seat++) {
     table.appendChild(renderQuadrant(seat as Seat, state));
   }
-  table.appendChild(renderCenter(state));
+  // The turned-up card sits in the middle only while bidding; once play starts
+  // the centre is left clear and played cards appear in each quadrant's corner.
+  if (state.phase === "bidding") table.appendChild(renderRetourne(state));
 }
 
 // --- Wiring -----------------------------------------------------------------

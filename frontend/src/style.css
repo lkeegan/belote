@@ -418,93 +418,56 @@ body {
   font-size: 3.5rem;
 }
 
-/* --- Centre (turned card / trump) --- */
+/* --- Title-bar status line --- */
 
-.table-center {
+.status {
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+.status .suit {
+  font-size: 1.35rem;
+  vertical-align: -0.1em;
+}
+.status .suit.red {
+  color: #ff6b81;
+}
+.status .suit.black {
+  color: #cfd8e3;
+}
+
+/* --- Played cards on the table --- */
+
+/* The turned-up card, centred on the table during bidding only. */
+.retourne {
   position: absolute;
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
-  /* Permanent card-sized box: stays the same whether it shows the turned
-     card or the "who took" text. */
-  width: 150px;
-  height: 210px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.4rem;
-  padding: 0.6rem;
-  background: rgba(0, 33, 0, 1.0);
-  border-radius: 12px;
-  text-align: center;
-  /* Capture clicks so they don't fall through to the quadrant behind. */
-  pointer-events: auto;
-  cursor: default;
+  z-index: 3;
 }
 
-.table-center .label {
-  font-size: 0.85rem;
-  text-transform: capitalize;
-  opacity: 0.9;
+/* A played card, full size, tucked into the quadrant corner nearest the table
+   centre so it's obvious who played it. */
+.played {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
 }
-
-.trump-info {
-  margin: 0;
-  font-size: 1.2rem;
-  font-weight: 600;
-  line-height: 1.45;
+.corner-tl .played {
+  bottom: 0.6rem;
+  right: 0.6rem;
 }
-
-/* During bidding, play, and the result the centre grows to fit its contents. */
-.table-center.bidding,
-.table-center.playing,
-.table-center.finished {
-  width: auto;
-  height: auto;
-  min-width: 150px;
-  max-width: 60vw;
-  gap: 0.6rem;
+.corner-tr .played {
+  bottom: 0.6rem;
+  left: 0.6rem;
 }
-
-/* The cards played so far in the current trick. */
-.trick {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.3rem;
-  justify-content: center;
+.corner-bl .played {
+  top: 0.6rem;
+  right: 0.6rem;
 }
-
-.card.mini {
-  width: 46px;
-  height: 66px;
-  border-radius: 5px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
-}
-.card.mini .pip {
-  font-size: 1.5rem;
-}
-.card.mini .corner-mark {
-  font-size: 0.7rem;
-}
-.card.mini .corner-mark.top {
-  top: 3px;
-  left: 3px;
-}
-.card.mini .corner-mark.bottom {
-  bottom: 3px;
-  right: 3px;
-}
-
-.result {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  font-size: 0.9rem;
-}
-.result span:first-child {
-  font-size: 1.15rem;
-  font-weight: 700;
+.corner-br .played {
+  top: 0.6rem;
+  left: 0.6rem;
 }
 
 /* --- Scoreboard --- */
@@ -585,13 +548,7 @@ body {
     font-size: 1rem;
   }
 
-  .table-center {
-    width: 108px;
-    height: 150px;
-    padding: 0.4rem;
-  }
-
-  .trump-info {
-    font-size: 0.95rem;
+  .status {
+    font-size: 0.85rem;
   }
 }
