@@ -8,11 +8,23 @@
 	"main": "src/index.ts",
 	"compatibility_date": "2026-06-09",
 	"migrations": [
+		// v1 created the template's class in production; keep it so the applied
+		// migration history matches. v2 renames it to BeloteGame (the old DO held
+		// no meaningful storage, so a rename is clean and preserves the binding).
 		{
 			"new_sqlite_classes": [
-				"BeloteGame"
+				"MyDurableObject"
 			],
 			"tag": "v1"
+		},
+		{
+			"renamed_classes": [
+				{
+					"from": "MyDurableObject",
+					"to": "BeloteGame"
+				}
+			],
+			"tag": "v2"
 		}
 	],
 	"durable_objects": {
