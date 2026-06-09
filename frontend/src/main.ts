@@ -190,6 +190,9 @@ let state: GameState | null = null;
 let mySeat: Seat | null = loadSeat();
 let busy = false; // an action is in flight; pause polling
 let offline = false;
+// Played-card keys shown last render, so only freshly played cards animate in
+// (render rebuilds the DOM on every poll).
+let lastPlayed = new Set<string>();
 
 // --- Actions ----------------------------------------------------------------
 
@@ -331,6 +334,8 @@ function renderQuadrant(seat: Seat, s: GameState): HTMLElement {
   if (played) {
     const pc = renderCard(played, { trump: played.suit === s.trump });
     pc.classList.add("played");
+    // Animate only when this card is newly played (not on every poll redraw).
+    if (!lastPlayed.has(cardKey(played))) pc.classList.add("deal-in");
     q.appendChild(pc);
   }
 
@@ -459,11 +464,13 @@ function render(): void {
 
   // Choose a seat before anything else; this device plays only for it.
   if (mySeat === null) {
+    lastPlayed = new Set();
     table.appendChild(renderSeatSelect());
     return;
   }
 
   if (!state) {
+    lastPlayed = new Set();
     const msg = document.createElement("div");
     msg.className = "empty-msg";
     msg.textContent = offline
@@ -479,6 +486,9 @@ function render(): void {
   // The turned-up card sits in the middle only while bidding; once play starts
   // the centre is left clear and played cards appear in each quadrant's corner.
   if (state.phase === "bidding") table.appendChild(renderRetourne(state));
+
+  // Remember which cards are on the table so they don't re-animate next redraw.
+  lastPlayed = new Set(state.currentTrick.map((p) => cardKey(p.card)));
 }
 
 // --- Wiring -----------------------------------------------------------------
