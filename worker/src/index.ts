@@ -38,21 +38,27 @@ export class MyDurableObject extends DurableObject<Env> {
 	}
 }
 
-// Origins allowed to read the worker's responses from a browser: the deployed
-// frontend plus the local Vite dev and preview servers.
-const ALLOWED_ORIGINS = new Set([
-	"https://keegan.ch",
-	"http://localhost:5173",
-	"http://localhost:4173",
-]);
+// The deployed frontend; always allowed to read the worker's responses.
+const PROD_ORIGINS = new Set(["https://keegan.ch"]);
+
+// The local Vite dev and preview servers; only allowed when the worker itself
+// is running locally (under `wrangler dev`), never in production.
+const DEV_ORIGINS = new Set(["http://localhost:5173", "http://localhost:4173"]);
 
 /**
- * CORS headers for a request: reflect the Origin back only when it is on the
- * allowlist, so other sites' browser JS cannot read the response.
+ * CORS headers for a request: reflect the Origin back only when it is allowed,
+ * so other sites' browser JS cannot read the response. localhost origins are
+ * accepted only when the worker is served from localhost, i.e. local dev.
  */
 function corsHeaders(request: Request): Record<string, string> {
+	const isDev = ["localhost", "127.0.0.1"].includes(
+		new URL(request.url).hostname,
+	);
+	const allowed = isDev
+		? new Set([...PROD_ORIGINS, ...DEV_ORIGINS])
+		: PROD_ORIGINS;
 	const origin = request.headers.get("Origin");
-	if (origin && ALLOWED_ORIGINS.has(origin)) {
+	if (origin && allowed.has(origin)) {
 		return { "Access-Control-Allow-Origin": origin, Vary: "Origin" };
 	}
 	return { Vary: "Origin" };
