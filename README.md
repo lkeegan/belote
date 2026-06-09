@@ -56,11 +56,18 @@ shows it in the top bar. Run the worker locally with:
 ```bash
 cd worker
 pnpm install
-pnpm dev      # serves the worker at http://localhost:8787
+cp .dev.vars.example .dev.vars   # first time only
+pnpm dev                         # serves the worker at http://localhost:8787
 ```
 
 The frontend defaults to `http://localhost:8787`; set `VITE_WORKER_URL` at build
 time (e.g. in CI) to point the deployed site at the deployed worker.
+
+The worker restricts CORS to known frontend origins. `keegan.ch` is always
+allowed; the local Vite origins are allowed only in development. Development is
+signalled by `ENVIRONMENT=development` from `.dev.vars`, which `wrangler dev`
+loads automatically — the deployed worker uses the `production` value from
+`wrangler.jsonc`. Re-run `pnpm cf-typegen` after changing `vars`/bindings.
 
 ## Deployment
 

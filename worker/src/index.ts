@@ -48,12 +48,12 @@ const DEV_ORIGINS = new Set(["http://localhost:5173", "http://localhost:4173"]);
 /**
  * CORS headers for a request: reflect the Origin back only when it is allowed,
  * so other sites' browser JS cannot read the response. localhost origins are
- * accepted only when the worker is served from localhost, i.e. local dev.
+ * accepted only in local development, signalled by ENVIRONMENT=development
+ * (set in .dev.vars, which `wrangler dev` loads; the deployed worker uses the
+ * "production" value from wrangler.jsonc).
  */
-function corsHeaders(request: Request): Record<string, string> {
-	const isDev = ["localhost", "127.0.0.1"].includes(
-		new URL(request.url).hostname,
-	);
+function corsHeaders(request: Request, env: Env): Record<string, string> {
+	const isDev = env.ENVIRONMENT === "development";
 	const allowed = isDev
 		? new Set([...PROD_ORIGINS, ...DEV_ORIGINS])
 		: PROD_ORIGINS;
@@ -86,6 +86,6 @@ export default {
 		const greeting = await stub.sayHello("belote");
 
 		// Allow only the known frontend origins to read the response in a browser.
-		return new Response(greeting, { headers: corsHeaders(request) });
+		return new Response(greeting, { headers: corsHeaders(request, env) });
 	},
 } satisfies ExportedHandler<Env>;
