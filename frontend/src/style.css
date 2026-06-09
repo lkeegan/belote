@@ -188,8 +188,8 @@ body {
 }
 
 .bid {
-  font-size: 0.95rem;
-  padding: 0.4rem 0.9rem;
+  font-size: 1.9rem;
+  padding: 0.8rem 1.8rem;
   border: none;
   border-radius: 999px;
   font-weight: 700;
@@ -208,7 +208,7 @@ body {
   color: #14502c;
 }
 .bid.take-suit .suit {
-  font-size: 1.1rem;
+  font-size: 2.2rem;
 }
 .bid.take-suit.red .suit {
   color: #d4163c;
