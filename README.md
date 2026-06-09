@@ -48,6 +48,20 @@ pnpm test     # run the unit tests (Vitest)
 The unit tests (`frontend/src/*.test.ts`) cover the dealing logic and also run
 in CI before each deploy.
 
+### Worker
+
+The frontend fetches a greeting from the Cloudflare Worker in `worker/` and
+shows it in the top bar. Run the worker locally with:
+
+```bash
+cd worker
+pnpm install
+pnpm dev      # serves the worker at http://localhost:8787
+```
+
+The frontend defaults to `http://localhost:8787`; set `VITE_WORKER_URL` at build
+time (e.g. in CI) to point the deployed site at the deployed worker.
+
 ## Deployment
 
 Pushing to `main` runs `.github/workflows/deploy.yml`, which installs with pnpm,

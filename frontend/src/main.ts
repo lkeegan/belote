@@ -299,3 +299,23 @@ nextGame.addEventListener("click", () => {
 // Default to today's date (YYYYMMDD) so everyone playing that day starts from
 // the same number, but it differs day to day.
 setSeed(todaySeed());
+
+// --- Worker greeting --------------------------------------------------------
+
+// Base URL of the Cloudflare Worker. Defaults to the local `wrangler dev`
+// server; set VITE_WORKER_URL at build time to point at the deployed worker.
+const WORKER_URL = import.meta.env.VITE_WORKER_URL ?? "http://localhost:8787";
+
+async function showWorkerGreeting(): Promise<void> {
+  const el = document.querySelector<HTMLElement>("#worker-msg");
+  if (!el) return;
+  try {
+    const res = await fetch(WORKER_URL);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    el.textContent = await res.text();
+  } catch {
+    el.textContent = "worker hors ligne";
+  }
+}
+
+showWorkerGreeting();
