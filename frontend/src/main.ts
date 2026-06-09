@@ -1,19 +1,12 @@
 import "./style.css";
-import {
-  dealBelote,
-  completeDeal,
-  SUITS,
-  RANKS,
-  type Card,
-  type Rank,
-  type Suit,
-} from "./deck";
+import { SUITS, RANKS, type Card, type Rank, type Suit } from "./deck";
 
-// Players sit in the four corners. Partners are diagonal, so Sebastian
-// (top-left) pairs with Liam (bottom-right) and Maya (top-right) with Dadmor
-// (bottom-left).
-const PLAYERS = ["Sébastian", "Maya", "Dadmor", "Liam"];
-const CORNERS = ["corner-tl", "corner-tr", "corner-bl", "corner-br"];
+// Players sit in the four corners, numbered in go-around play order to match
+// the worker's seats: 0 → 1 → 2 → 3 → 0 around the table. Partners sit
+// opposite, so the teams are {0, 2} (Sébastian + Liam) and {1, 3}
+// (Maya + Dadmor). The corner classes place each seat at its physical corner.
+const PLAYERS = ["Sébastian", "Maya", "Liam", "Dadmor"];
+const CORNERS = ["corner-tl", "corner-tr", "corner-br", "corner-bl"];
 
 const SUIT_SYMBOL: Record<Suit, string> = {
   hearts: "♥",
@@ -58,11 +51,28 @@ function isRed(suit: Suit): boolean {
   return suit === "hearts" || suit === "diamonds";
 }
 
-function renderCard(card: Card, isTrump = false): HTMLElement {
+const cardKey = (c: Card) => `${c.rank}${c.suit}`;
+
+interface CardOptions {
+  trump?: boolean;
+  playable?: boolean;
+  illegal?: boolean;
+  mini?: boolean;
+  onPlay?: () => void;
+}
+
+function renderCard(card: Card, opts: CardOptions = {}): HTMLElement {
   const el = document.createElement("div");
-  el.className = `card ${isRed(card.suit) ? "red" : "black"}${
-    isTrump ? " trump" : ""
-  }`;
+  el.className = [
+    "card",
+    isRed(card.suit) ? "red" : "black",
+    opts.trump ? "trump" : "",
+    opts.mini ? "mini" : "",
+    opts.playable ? "playable" : "",
+    opts.illegal ? "illegal" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
   const label = RANK_LABEL[card.rank];
   const symbol = SUIT_SYMBOL[card.suit];
   el.innerHTML = `
@@ -70,7 +80,16 @@ function renderCard(card: Card, isTrump = false): HTMLElement {
     <span class="pip">${symbol}</span>
     <span class="corner-mark bottom">${label}<br />${symbol}</span>
   `;
-  el.setAttribute("aria-label", `${RANK_NAME[card.rank]} de ${SUIT_NAME[card.suit]}`);
+  el.setAttribute(
+    "aria-label",
+    `${RANK_NAME[card.rank]} de ${SUIT_NAME[card.suit]}`,
+  );
+  if (opts.playable && opts.onPlay) {
+    el.addEventListener("click", (event) => {
+      event.stopPropagation(); // don't toggle the quadrant's reveal
+      opts.onPlay!();
+    });
+  }
   return el;
 }
 
@@ -92,58 +111,63 @@ function sortHand(cards: Card[]): Card[] {
     );
 }
 
-// --- State ------------------------------------------------------------------
+// --- Worker state -----------------------------------------------------------
 
-const seedInput = document.querySelector<HTMLInputElement>("#seed")!;
-const table = document.querySelector<HTMLElement>("#table")!;
+type Seat = 0 | 1 | 2 | 3;
+type Phase = "bidding" | "playing" | "finished";
 
-let seed = "";
-let taker: number | null = null;
-let revealed = [false, false, false, false];
-
-const takerKey = (s: string) => `belote.taker.${s}`;
-
-function loadTaker(s: string): number | null {
-  if (!s) return null;
-  try {
-    const v = localStorage.getItem(takerKey(s));
-    return v === null ? null : Number(v);
-  } catch {
-    return null;
-  }
+interface TrickPlay {
+  seat: Seat;
+  card: Card;
+}
+interface HandResult {
+  handPoints: [number, number];
+  madeContract: boolean;
+  capot: boolean;
+  beloteTeam: 0 | 1 | null;
+}
+interface GameState {
+  phase: Phase;
+  seed: string;
+  opener: Seat;
+  hands: Card[][];
+  trumpCard: Card;
+  trump: Suit | null;
+  taker: Seat | null;
+  turn: Seat;
+  currentTrick: TrickPlay[];
+  tricks: { winner: Seat; cards: TrickPlay[] }[];
+  scores: [number, number];
+  result?: HandResult;
+  legal: Card[];
 }
 
-function saveTaker(s: string, t: number | null): void {
-  try {
-    if (t === null) localStorage.removeItem(takerKey(s));
-    else localStorage.setItem(takerKey(s), String(t));
-  } catch {
-    /* storage unavailable — taker simply won't persist */
-  }
+// Base URL of the Cloudflare Worker. Defaults to the local `wrangler dev`
+// server; set VITE_WORKER_URL at build time to point at the deployed worker.
+const WORKER_URL = import.meta.env.VITE_WORKER_URL ?? "http://localhost:8787";
+
+/** Call the worker. Returns the game state, or null when no game exists. */
+async function api(
+  path: string,
+  method: "GET" | "POST" = "GET",
+  body?: unknown,
+): Promise<GameState | null> {
+  const res = await fetch(WORKER_URL + path, {
+    method,
+    headers: body ? { "Content-Type": "application/json" } : {},
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (res.status === 404) return null;
+  const data = await res.json();
+  if (!res.ok) throw new Error((data as { error?: string }).error ?? `HTTP ${res.status}`);
+  return data as GameState;
 }
 
-function setTaker(t: number | null): void {
-  taker = t;
-  saveTaker(seed, t);
-  render();
-}
-
-/** Seat that starts the bidding: game number mod 4, so it rotates each game. */
-function firstBidder(s: string): number {
-  const n = parseInt(s, 10);
-  if (Number.isNaN(n)) return 0;
-  return ((n % PLAYERS.length) + PLAYERS.length) % PLAYERS.length;
-}
-
-// Reserve the last two digits as a game-of-day counter, so incrementing within
-// a day (Partie suivante) never reaches the next day's default number.
+// Reserve the last two digits as a game-of-day counter, matching the worker's
+// default so the field shows a familiar number.
 const GAMES_PER_DAY = 100;
 
-/**
- * Default game number for the day, shared by everyone that day. Encoded as
- * ((year - 2026) * 10000 + month * 100 + day) * 100, so 2026-06-08 is 60800,
- * its second game 60801, and tomorrow starts cleanly at 60900.
- */
+/** Default game number for the day, shared by everyone that day. */
 function todaySeed(): string {
   const d = new Date();
   const dateCode =
@@ -151,16 +175,78 @@ function todaySeed(): string {
   return String(dateCode * GAMES_PER_DAY);
 }
 
+let state: GameState | null = null;
+let revealed = [false, false, false, false];
+let renderedSeed: string | null = null;
+let busy = false; // an action is in flight; pause polling
+let offline = false;
+
+// --- Actions ----------------------------------------------------------------
+
+/** Fetch the current game and re-render (skipped while an action is running). */
+async function refresh(): Promise<void> {
+  if (busy) return;
+  try {
+    state = await api("/state");
+    offline = false;
+    render();
+  } catch {
+    offline = true;
+    renderStatus();
+  }
+}
+
+/** Run an action against the worker, adopting the returned state. */
+async function act(
+  path: string,
+  body: unknown,
+  onError?: (message: string) => void,
+): Promise<void> {
+  busy = true;
+  try {
+    const next = await api(path, "POST", body);
+    offline = false;
+    if (next) state = next;
+  } catch (e) {
+    if (e instanceof Error && e.message.startsWith("HTTP")) offline = true;
+    onError?.(e instanceof Error ? e.message : String(e));
+  } finally {
+    busy = false;
+    render();
+  }
+}
+
+/** Deal a fresh game, confirming first if one is already under way. */
+function newGame(seed: string): void {
+  if (state && state.phase !== "finished") {
+    const ok = window.confirm(
+      `Une partie est en cours (n° ${state.seed}). La remplacer par la n° ${seed} ?`,
+    );
+    if (!ok) {
+      seedInput.value = state.seed; // revert the field
+      return;
+    }
+  }
+  void act("/new", { seed });
+}
+
+const take = (seat: Seat) => act("/take", { seat });
+const play = (seat: Seat, card: Card) =>
+  act("/play", { seat, card }, () => void refresh());
+
 // --- Rendering --------------------------------------------------------------
 
-function renderQuadrant(
-  seat: number,
-  hand: Card[],
-  trumpSuit: Suit | undefined,
-  isStarter: boolean,
-): HTMLElement {
+const seedInput = document.querySelector<HTMLInputElement>("#seed")!;
+const table = document.querySelector<HTMLElement>("#table")!;
+const scoreboard = document.querySelector<HTMLElement>("#scoreboard")!;
+const workerMsg = document.querySelector<HTMLElement>("#worker-msg")!;
+
+function renderQuadrant(seat: Seat, s: GameState): HTMLElement {
   const q = document.createElement("div");
-  q.className = `quadrant ${CORNERS[seat]}${taker === seat ? " taker" : ""}`;
+  const classes = ["quadrant", CORNERS[seat]];
+  if (s.taker === seat) classes.push("taker");
+  if (s.phase === "playing" && s.turn === seat) classes.push("turn");
+  q.className = classes.join(" ");
 
   const head = document.createElement("div");
   head.className = "seat-head";
@@ -170,37 +256,58 @@ function renderQuadrant(
   name.textContent = PLAYERS[seat];
   head.appendChild(name);
 
-  if (isStarter) {
+  if (s.phase === "bidding" && s.opener === seat) {
     const badge = document.createElement("span");
     badge.className = "starter-badge";
     badge.textContent = "commence";
     head.appendChild(badge);
   }
 
-  const take = document.createElement("button");
-  take.type = "button";
-  take.className = `take${taker === seat ? " active" : ""}`;
-  take.textContent = taker === seat ? "A pris" : "Prend";
-  take.addEventListener("click", (event) => {
-    event.stopPropagation();
-    setTaker(taker === seat ? null : seat);
-  });
-
-  head.appendChild(take);
+  // The "Prend" button only appears during bidding; afterwards the gold ring
+  // marks the taker.
+  if (s.phase === "bidding") {
+    const takeBtn = document.createElement("button");
+    takeBtn.type = "button";
+    takeBtn.className = "take";
+    takeBtn.textContent = "Prend";
+    takeBtn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      void take(seat);
+    });
+    head.appendChild(takeBtn);
+  } else if (s.taker === seat) {
+    const tag = document.createElement("span");
+    tag.className = "take active";
+    tag.textContent = "A pris";
+    head.appendChild(tag);
+  }
 
   const area = document.createElement("div");
   area.className = "hand-area";
+
+  const isTurn = s.phase === "playing" && s.turn === seat;
+  const legalKeys = new Set(s.legal.map(cardKey));
+
   if (revealed[seat]) {
     const cards = document.createElement("div");
     cards.className = "cards";
-    for (const card of sortHand(hand)) {
-      cards.appendChild(renderCard(card, card.suit === trumpSuit));
+    for (const card of sortHand(s.hands[seat])) {
+      const playable = isTurn && legalKeys.has(cardKey(card));
+      const illegal = isTurn && !legalKeys.has(cardKey(card));
+      cards.appendChild(
+        renderCard(card, {
+          trump: card.suit === s.trump,
+          playable,
+          illegal,
+          onPlay: () => void play(seat, card),
+        }),
+      );
     }
     area.appendChild(cards);
   } else {
     const backs = document.createElement("div");
     backs.className = "cards backs";
-    for (let b = 0; b < hand.length; b++) backs.appendChild(renderBack());
+    for (let b = 0; b < s.hands[seat].length; b++) backs.appendChild(renderBack());
     area.appendChild(backs);
     const hint = document.createElement("span");
     hint.className = "reveal-hint";
@@ -216,106 +323,138 @@ function renderQuadrant(
   return q;
 }
 
-function renderCenter(
-  trumpCard: Card | undefined,
-  trumpSuit: Suit | undefined,
-): HTMLElement {
+function renderCenter(s: GameState): HTMLElement {
   const center = document.createElement("div");
-  center.className = "table-center";
+  center.className = `table-center ${s.phase}`;
 
-  if (taker === null && trumpCard) {
+  if (s.phase === "bidding") {
     const label = document.createElement("span");
     label.className = "label";
-    label.textContent = `Retourne — ${SUIT_NAME[trumpCard.suit]}`;
-    center.append(label, renderCard(trumpCard, true));
-  } else if (trumpSuit !== undefined && taker !== null) {
+    label.textContent = `Retourne — ${SUIT_NAME[s.trumpCard.suit]}`;
+    center.append(label, renderCard(s.trumpCard, { trump: true }));
+    return center;
+  }
+
+  // playing / finished: trump line, current trick, and turn or result.
+  if (s.trump !== null && s.taker !== null) {
     const info = document.createElement("p");
     info.className = "trump-info";
-    info.innerHTML = `${PLAYERS[taker]}<br />a pris à<br />${SUIT_NAME[trumpSuit]}`;
+    info.innerHTML = `Atout ${SUIT_SYMBOL[s.trump]}<br />${PLAYERS[s.taker]} a pris`;
     center.appendChild(info);
+  }
+
+  if (s.currentTrick.length > 0) {
+    const trick = document.createElement("div");
+    trick.className = "trick";
+    for (const { card } of s.currentTrick) {
+      trick.appendChild(renderCard(card, { mini: true, trump: card.suit === s.trump }));
+    }
+    center.appendChild(trick);
+  }
+
+  if (s.phase === "playing") {
+    const turn = document.createElement("span");
+    turn.className = "label";
+    turn.textContent = `Au tour de ${PLAYERS[s.turn]}`;
+    center.appendChild(turn);
+  } else if (s.result) {
+    center.appendChild(renderResult(s.result, s.taker!));
   }
 
   return center;
 }
 
+function renderResult(r: HandResult, taker: Seat): HTMLElement {
+  const box = document.createElement("div");
+  box.className = "result";
+  const head = r.capot
+    ? "Capot !"
+    : r.madeContract
+      ? "Contrat réussi"
+      : "Chute (dedans)";
+  const lines = [
+    head,
+    `Preneur : ${PLAYERS[taker]}`,
+    `${r.handPoints[0]} – ${r.handPoints[1]}`,
+  ];
+  if (r.beloteTeam !== null) lines.push("Belote-rebelote +20");
+  box.innerHTML = lines.map((l) => `<span>${l}</span>`).join("");
+  return box;
+}
+
+function renderScoreboard(s: GameState | null): void {
+  if (!s) {
+    scoreboard.textContent = "";
+    return;
+  }
+  scoreboard.innerHTML =
+    `<span class="team gold">Séb·Liam ${s.scores[0]}</span>` +
+    `<span class="sep">—</span>` +
+    `<span class="team blue">Maya·Dadmor ${s.scores[1]}</span>`;
+}
+
+function renderStatus(): void {
+  workerMsg.textContent = offline ? "worker hors ligne" : "";
+}
+
 function render(): void {
+  renderStatus();
+  renderScoreboard(state);
   table.replaceChildren();
 
-  if (!seed) {
+  if (!state) {
     const msg = document.createElement("div");
     msg.className = "empty-msg";
-    msg.textContent = "Entrez un numéro de partie ci-dessus pour distribuer.";
+    msg.textContent = offline
+      ? "Worker hors ligne — nouvelle tentative…"
+      : "Aucune partie. Entrez un numéro pour distribuer.";
     table.appendChild(msg);
     return;
   }
 
-  let hands: Card[][];
-  let trumpCard: Card | undefined;
-  let trumpSuit: Suit | undefined;
-
-  if (taker === null) {
-    const d = dealBelote(seed);
-    hands = d.hands;
-    trumpCard = d.trumpCard;
-  } else {
-    const d = completeDeal(seed, taker);
-    hands = d.hands;
-    trumpSuit = d.trumpSuit;
+  // Reset reveals when the game changes; keep the active hand open during play.
+  if (state.seed !== renderedSeed) {
+    revealed = [false, false, false, false];
+    renderedSeed = state.seed;
   }
+  if (state.phase === "playing") revealed[state.turn] = true;
 
-  const starter = firstBidder(seed);
+  if (seedInput.value !== state.seed) seedInput.value = state.seed;
+
   for (let seat = 0; seat < PLAYERS.length; seat++) {
-    table.appendChild(
-      renderQuadrant(seat, hands[seat], trumpSuit, seat === starter),
-    );
+    table.appendChild(renderQuadrant(seat as Seat, state));
   }
-  table.appendChild(renderCenter(trumpCard, trumpSuit));
+  table.appendChild(renderCenter(state));
 }
 
 // --- Wiring -----------------------------------------------------------------
 
-/** Switch to a game number, updating the input and reloading per-game state. */
-function setSeed(newSeed: string): void {
-  seed = newSeed;
-  seedInput.value = newSeed;
-  taker = loadTaker(newSeed);
-  revealed = [false, false, false, false];
-  render();
-}
-
-// Typing in the field shouldn't overwrite the input's own value mid-edit.
-seedInput.addEventListener("input", () => {
-  seed = seedInput.value.trim();
-  taker = loadTaker(seed);
-  revealed = [false, false, false, false];
-  render();
+// Commit the seed only when the field is left or Enter is pressed, not on every
+// keystroke, so typing a number doesn't repeatedly re-deal.
+seedInput.addEventListener("change", () => {
+  const value = seedInput.value.trim();
+  if (value) newGame(value);
 });
 
 const nextGame = document.querySelector<HTMLButtonElement>("#next-game")!;
 nextGame.addEventListener("click", () => {
-  setSeed(String((parseInt(seed, 10) || 0) + 1));
+  const current = state ? parseInt(state.seed, 10) : parseInt(seedInput.value, 10);
+  newGame(String((current || 0) + 1));
 });
 
-// Default to today's date (YYYYMMDD) so everyone playing that day starts from
-// the same number, but it differs day to day.
-setSeed(todaySeed());
-
-// --- Worker greeting --------------------------------------------------------
-
-// Base URL of the Cloudflare Worker. Defaults to the local `wrangler dev`
-// server; set VITE_WORKER_URL at build time to point at the deployed worker.
-const WORKER_URL = import.meta.env.VITE_WORKER_URL ?? "http://localhost:8787";
-
-async function showWorkerGreeting(): Promise<void> {
-  const el = document.querySelector<HTMLElement>("#worker-msg");
-  if (!el) return;
+/** On load, adopt the worker's current game, or deal today's if there is none. */
+async function init(): Promise<void> {
   try {
-    const res = await fetch(WORKER_URL);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    el.textContent = await res.text();
+    state = await api("/state");
+    offline = false;
+    if (!state) await act("/new", { seed: todaySeed() });
+    else render();
   } catch {
-    el.textContent = "worker hors ligne";
+    offline = true;
+    render();
   }
 }
 
-showWorkerGreeting();
+void init();
+// Poll for other players' moves.
+setInterval(() => void refresh(), 2000);
