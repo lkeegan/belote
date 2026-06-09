@@ -91,7 +91,6 @@ body {
   gap: 0.6rem;
   padding: 1.1rem;
   overflow: hidden;
-  cursor: pointer;
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
@@ -131,6 +130,11 @@ body {
 .corner-tr,
 .corner-bl {
   background: rgba(120, 200, 255, 0.07);
+}
+
+/* Your own seat is tinted brighter so it's easy to find. */
+.quadrant.mine {
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .quadrant.taker {
@@ -219,9 +223,65 @@ body {
   gap: 0.3rem;
 }
 
-.reveal-hint {
+/* --- Seat selector --- */
+
+.seat-select {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  padding: 1.5rem;
+}
+
+.seat-select-prompt {
+  margin: 0;
+  font-size: 1.6rem;
+  font-weight: 700;
+}
+
+.seat-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  max-width: 32rem;
+  width: 100%;
+}
+
+.seat-pick {
+  padding: 1.2rem 1rem;
+  font-size: 1.3rem;
+  font-weight: 700;
+  border: 2px solid transparent;
+  border-radius: 12px;
+  color: #14502c;
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+.seat-pick:hover {
+  filter: brightness(1.08);
+}
+.seat-pick.gold {
+  background: #f5c542;
+}
+.seat-pick.blue {
+  background: #7ac8ff;
+}
+
+#change-seat {
   font-size: 0.8rem;
-  opacity: 0.7;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 999px;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+  opacity: 0.8;
+}
+#change-seat:hover {
+  opacity: 1;
 }
 
 /* --- Cards --- */

@@ -175,9 +175,32 @@ function todaySeed(): string {
   return String(dateCode * GAMES_PER_DAY);
 }
 
+// This device plays for a single seat, chosen up front and remembered. Only
+// that seat's hand is shown; the others stay covered.
+const SEAT_KEY = "belote.seat";
+
+function loadSeat(): Seat | null {
+  try {
+    const n = Number(localStorage.getItem(SEAT_KEY));
+    return n === 0 || n === 1 || n === 2 || n === 3 ? (n as Seat) : null;
+  } catch {
+    return null;
+  }
+}
+
+function setMySeat(seat: Seat | null): void {
+  mySeat = seat;
+  try {
+    if (seat === null) localStorage.removeItem(SEAT_KEY);
+    else localStorage.setItem(SEAT_KEY, String(seat));
+  } catch {
+    /* storage unavailable — the choice simply won't persist */
+  }
+  render();
+}
+
 let state: GameState | null = null;
-let revealed = [false, false, false, false];
-let renderedSeed: string | null = null;
+let mySeat: Seat | null = loadSeat();
 let busy = false; // an action is in flight; pause polling
 let offline = false;
 
@@ -246,11 +269,14 @@ const seedInput = document.querySelector<HTMLInputElement>("#seed")!;
 const table = document.querySelector<HTMLElement>("#table")!;
 const scoreboard = document.querySelector<HTMLElement>("#scoreboard")!;
 const clearBtn = document.querySelector<HTMLButtonElement>("#clear-scores")!;
+const changeSeat = document.querySelector<HTMLButtonElement>("#change-seat")!;
 const workerMsg = document.querySelector<HTMLElement>("#worker-msg")!;
 
 function renderQuadrant(seat: Seat, s: GameState): HTMLElement {
+  const mine = seat === mySeat;
   const q = document.createElement("div");
   const classes = ["quadrant", CORNERS[seat]];
+  if (mine) classes.push("mine");
   if (s.taker === seat) classes.push("taker");
   if (s.phase === "playing" && s.turn === seat) classes.push("turn");
   q.className = classes.join(" ");
@@ -260,7 +286,7 @@ function renderQuadrant(seat: Seat, s: GameState): HTMLElement {
 
   const name = document.createElement("span");
   name.className = "name";
-  name.textContent = PLAYERS[seat];
+  name.textContent = mine ? `${PLAYERS[seat]} (vous)` : PLAYERS[seat];
   head.appendChild(name);
 
   if (s.phase === "bidding" && s.opener === seat) {
@@ -270,19 +296,16 @@ function renderQuadrant(seat: Seat, s: GameState): HTMLElement {
     head.appendChild(badge);
   }
 
-  // The "Prend" button only appears during bidding; afterwards the gold ring
-  // marks the taker.
-  if (s.phase === "bidding") {
+  // You only press "Prend" for your own seat; afterwards the gold ring marks
+  // whoever took.
+  if (s.phase === "bidding" && mine) {
     const takeBtn = document.createElement("button");
     takeBtn.type = "button";
     takeBtn.className = "take";
     takeBtn.textContent = "Prend";
-    takeBtn.addEventListener("click", (event) => {
-      event.stopPropagation();
-      void take(seat);
-    });
+    takeBtn.addEventListener("click", () => void take(seat));
     head.appendChild(takeBtn);
-  } else if (s.taker === seat) {
+  } else if (s.phase !== "bidding" && s.taker === seat) {
     const tag = document.createElement("span");
     tag.className = "take active";
     tag.textContent = "A pris";
@@ -295,7 +318,7 @@ function renderQuadrant(seat: Seat, s: GameState): HTMLElement {
   const isTurn = s.phase === "playing" && s.turn === seat;
   const legalKeys = new Set(s.legal.map(cardKey));
 
-  if (revealed[seat]) {
+  if (mine) {
     const cards = document.createElement("div");
     cards.className = "cards";
     for (const card of sortHand(s.hands[seat])) {
@@ -316,18 +339,34 @@ function renderQuadrant(seat: Seat, s: GameState): HTMLElement {
     backs.className = "cards backs";
     for (let b = 0; b < s.hands[seat].length; b++) backs.appendChild(renderBack());
     area.appendChild(backs);
-    const hint = document.createElement("span");
-    hint.className = "reveal-hint";
-    hint.textContent = "toucher pour voir";
-    area.appendChild(hint);
   }
 
   q.append(head, area);
-  q.addEventListener("click", () => {
-    revealed[seat] = !revealed[seat];
-    render();
-  });
   return q;
+}
+
+/** The initial "who are you?" screen: one button per seat. */
+function renderSeatSelect(): HTMLElement {
+  const wrap = document.createElement("div");
+  wrap.className = "seat-select";
+
+  const prompt = document.createElement("p");
+  prompt.className = "seat-select-prompt";
+  prompt.textContent = "Pour qui jouez-vous ?";
+  wrap.appendChild(prompt);
+
+  const buttons = document.createElement("div");
+  buttons.className = "seat-buttons";
+  for (let seat = 0; seat < PLAYERS.length; seat++) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = `seat-pick ${seat % 2 === 0 ? "gold" : "blue"}`;
+    btn.textContent = PLAYERS[seat];
+    btn.addEventListener("click", () => setMySeat(seat as Seat));
+    buttons.appendChild(btn);
+  }
+  wrap.appendChild(buttons);
+  return wrap;
 }
 
 function renderCenter(s: GameState): HTMLElement {
@@ -405,10 +444,22 @@ function renderStatus(): void {
   workerMsg.textContent = offline ? "worker hors ligne" : "";
 }
 
+function renderChangeSeat(): void {
+  changeSeat.hidden = mySeat === null;
+  if (mySeat !== null) changeSeat.textContent = `Joueur : ${PLAYERS[mySeat]}`;
+}
+
 function render(): void {
   renderStatus();
   renderScoreboard(state);
+  renderChangeSeat();
   table.replaceChildren();
+
+  // Choose a seat before anything else; this device plays only for it.
+  if (mySeat === null) {
+    table.appendChild(renderSeatSelect());
+    return;
+  }
 
   if (!state) {
     const msg = document.createElement("div");
@@ -419,13 +470,6 @@ function render(): void {
     table.appendChild(msg);
     return;
   }
-
-  // Reset reveals when the game changes; keep the active hand open during play.
-  if (state.seed !== renderedSeed) {
-    revealed = [false, false, false, false];
-    renderedSeed = state.seed;
-  }
-  if (state.phase === "playing") revealed[state.turn] = true;
 
   if (seedInput.value !== state.seed) seedInput.value = state.seed;
 
@@ -445,6 +489,7 @@ seedInput.addEventListener("change", () => {
 });
 
 clearBtn.addEventListener("click", clearScores);
+changeSeat.addEventListener("click", () => setMySeat(null));
 
 const nextGame = document.querySelector<HTMLButtonElement>("#next-game")!;
 nextGame.addEventListener("click", () => {
