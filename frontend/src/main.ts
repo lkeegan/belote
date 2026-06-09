@@ -128,7 +128,6 @@ interface HandResult {
 }
 interface GameState {
   phase: Phase;
-  seed: string;
   opener: Seat;
   hands: Card[][];
   trumpCard: Card;
@@ -163,18 +162,6 @@ async function api(
   const data = await res.json();
   if (!res.ok) throw new Error((data as { error?: string }).error ?? `HTTP ${res.status}`);
   return data as GameState;
-}
-
-// Reserve the last two digits as a game-of-day counter, matching the worker's
-// default so the field shows a familiar number.
-const GAMES_PER_DAY = 100;
-
-/** Default game number for the day, shared by everyone that day. */
-function todaySeed(): string {
-  const d = new Date();
-  const dateCode =
-    (d.getFullYear() - 2026) * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
-  return String(dateCode * GAMES_PER_DAY);
 }
 
 // This device plays for a single seat, chosen up front and remembered. Only
@@ -241,18 +228,13 @@ async function act(
   }
 }
 
-/** Deal a fresh game, confirming first if one is already under way. */
-function newGame(seed: string): void {
+/** Deal a fresh hand, confirming first if one is already under way. */
+function newGame(): void {
   if (state && state.phase !== "finished") {
-    const ok = window.confirm(
-      `Une partie est en cours (n° ${state.seed}). La remplacer par la n° ${seed} ?`,
-    );
-    if (!ok) {
-      seedInput.value = state.seed; // revert the field
+    if (!window.confirm("Une partie est en cours. Distribuer une nouvelle donne ?"))
       return;
-    }
   }
-  void act("/new", { seed });
+  void act("/new", undefined);
 }
 
 // A bid: pass (suit null) or take at a suit.
@@ -268,7 +250,6 @@ function clearScores(): void {
 
 // --- Rendering --------------------------------------------------------------
 
-const seedInput = document.querySelector<HTMLInputElement>("#seed")!;
 const table = document.querySelector<HTMLElement>("#table")!;
 const scoreboard = document.querySelector<HTMLElement>("#scoreboard")!;
 const clearBtn = document.querySelector<HTMLButtonElement>("#clear-scores")!;
@@ -503,12 +484,10 @@ function render(): void {
     msg.className = "empty-msg";
     msg.textContent = offline
       ? "Worker hors ligne — nouvelle tentative…"
-      : "Aucune partie. Entrez un numéro pour distribuer.";
+      : "Aucune partie. Touchez « Nouvelle donne » pour distribuer.";
     table.appendChild(msg);
     return;
   }
-
-  if (seedInput.value !== state.seed) seedInput.value = state.seed;
 
   for (let seat = 0; seat < PLAYERS.length; seat++) {
     table.appendChild(renderQuadrant(seat as Seat, state));
@@ -518,28 +497,18 @@ function render(): void {
 
 // --- Wiring -----------------------------------------------------------------
 
-// Commit the seed only when the field is left or Enter is pressed, not on every
-// keystroke, so typing a number doesn't repeatedly re-deal.
-seedInput.addEventListener("change", () => {
-  const value = seedInput.value.trim();
-  if (value) newGame(value);
-});
-
 clearBtn.addEventListener("click", clearScores);
 changeSeat.addEventListener("click", () => setMySeat(null));
 
 const nextGame = document.querySelector<HTMLButtonElement>("#next-game")!;
-nextGame.addEventListener("click", () => {
-  const current = state ? parseInt(state.seed, 10) : parseInt(seedInput.value, 10);
-  newGame(String((current || 0) + 1));
-});
+nextGame.addEventListener("click", () => newGame());
 
-/** On load, adopt the worker's current game, or deal today's if there is none. */
+/** On load, adopt the worker's current game, or deal the first hand if none. */
 async function init(): Promise<void> {
   try {
     state = await api("/state");
     offline = false;
-    if (!state) await act("/new", { seed: todaySeed() });
+    if (!state) await act("/new", undefined);
     else render();
   } catch {
     offline = true;
