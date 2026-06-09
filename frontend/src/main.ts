@@ -135,6 +135,8 @@ interface GameState {
   trump: Suit | null;
   taker: Seat | null;
   turn: Seat;
+  biddingRound: 1 | 2;
+  passes: number;
   currentTrick: TrickPlay[];
   tricks: { winner: Seat; cards: TrickPlay[] }[];
   scores: [number, number];
@@ -253,7 +255,8 @@ function newGame(seed: string): void {
   void act("/new", { seed });
 }
 
-const take = (seat: Seat) => act("/take", { seat });
+// A bid: pass (suit null) or take at a suit.
+const bid = (seat: Seat, suit: Suit | null) => act("/bid", { seat, suit });
 const play = (seat: Seat, card: Card) =>
   act("/play", { seat, card }, () => void refresh());
 
@@ -274,11 +277,12 @@ const workerMsg = document.querySelector<HTMLElement>("#worker-msg")!;
 
 function renderQuadrant(seat: Seat, s: GameState): HTMLElement {
   const mine = seat === mySeat;
+  const bidding = s.phase === "bidding";
   const q = document.createElement("div");
   const classes = ["quadrant", CORNERS[seat]];
   if (mine) classes.push("mine");
   if (s.taker === seat) classes.push("taker");
-  if (s.phase === "playing" && s.turn === seat) classes.push("turn");
+  if ((s.phase === "playing" || bidding) && s.turn === seat) classes.push("turn");
   q.className = classes.join(" ");
 
   const head = document.createElement("div");
@@ -289,23 +293,20 @@ function renderQuadrant(seat: Seat, s: GameState): HTMLElement {
   name.textContent = mine ? `${PLAYERS[seat]} (vous)` : PLAYERS[seat];
   head.appendChild(name);
 
-  if (s.phase === "bidding" && s.opener === seat) {
+  if (bidding && s.opener === seat) {
     const badge = document.createElement("span");
     badge.className = "starter-badge";
     badge.textContent = "commence";
     head.appendChild(badge);
   }
 
-  // You only press "Prend" for your own seat; afterwards the gold ring marks
-  // whoever took.
-  if (s.phase === "bidding" && mine) {
-    const takeBtn = document.createElement("button");
-    takeBtn.type = "button";
-    takeBtn.className = "take";
-    takeBtn.textContent = "Prend";
-    takeBtn.addEventListener("click", () => void take(seat));
-    head.appendChild(takeBtn);
-  } else if (s.phase !== "bidding" && s.taker === seat) {
+  // Seats earlier in the order than the current bidder have passed this round.
+  if (bidding && ((seat - s.opener + 4) % 4) < s.passes) {
+    const tag = document.createElement("span");
+    tag.className = "pass-tag";
+    tag.textContent = "passe";
+    head.appendChild(tag);
+  } else if (!bidding && s.taker === seat) {
     const tag = document.createElement("span");
     tag.className = "take active";
     tag.textContent = "A pris";
@@ -342,7 +343,40 @@ function renderQuadrant(seat: Seat, s: GameState): HTMLElement {
   }
 
   q.append(head, area);
+
+  // Your bid controls, shown only on your turn during bidding.
+  if (bidding && mine && s.turn === seat) {
+    q.appendChild(renderBidControls(s, seat));
+  }
   return q;
+}
+
+/** Pass / take buttons for the seat currently bidding. */
+function renderBidControls(s: GameState, seat: Seat): HTMLElement {
+  const wrap = document.createElement("div");
+  wrap.className = "bid-controls";
+
+  const passBtn = document.createElement("button");
+  passBtn.type = "button";
+  passBtn.className = "bid pass";
+  passBtn.textContent = "Passe";
+  passBtn.addEventListener("click", () => void bid(seat, null));
+  wrap.appendChild(passBtn);
+
+  // Round 1 takes the retourne suit; round 2 names one of the other three.
+  const takeSuits =
+    s.biddingRound === 1
+      ? [s.trumpCard.suit]
+      : SUITS.filter((suit) => suit !== s.trumpCard.suit);
+  for (const suit of takeSuits) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = `bid take-suit ${isRed(suit) ? "red" : "black"}`;
+    btn.innerHTML = `Prend <span class="suit">${SUIT_SYMBOL[suit]}</span>`;
+    btn.addEventListener("click", () => void bid(seat, suit));
+    wrap.appendChild(btn);
+  }
+  return wrap;
 }
 
 /** The initial "who are you?" screen: one button per seat. */
@@ -377,7 +411,10 @@ function renderCenter(s: GameState): HTMLElement {
     const label = document.createElement("span");
     label.className = "label";
     label.textContent = `Retourne — ${SUIT_NAME[s.trumpCard.suit]}`;
-    center.append(label, renderCard(s.trumpCard, { trump: true }));
+    const round = document.createElement("span");
+    round.className = "label";
+    round.textContent = `${s.biddingRound === 1 ? "1er" : "2e"} tour — au tour de ${PLAYERS[s.turn]}`;
+    center.append(label, renderCard(s.trumpCard, { trump: true }), round);
     return center;
   }
 

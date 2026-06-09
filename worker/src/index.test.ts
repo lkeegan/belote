@@ -3,6 +3,8 @@ import { describe, it, expect } from "vitest";
 import { legalMoves } from "./game/rules";
 import { type GameState } from "./game/state";
 
+type ClientState = GameState & { legal: unknown[] };
+
 const BASE = "https://belote.test";
 const get = (path: string) => SELF.fetch(`${BASE}${path}`);
 const post = (path: string, body?: unknown) =>
@@ -11,6 +13,14 @@ const post = (path: string, body?: unknown) =>
     headers: { "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
+
+/** Deal `seed`, then have the opener take the retourne suit (enter playing). */
+async function newAndTake(seed: string): Promise<ClientState> {
+  const dealt = (await (await post("/new", { seed })).json()) as GameState;
+  return (await (
+    await post("/bid", { seat: dealt.opener, suit: dealt.trumpCard.suit })
+  ).json()) as ClientState;
+}
 
 describe("HTTP layer", () => {
   it("reports no game before one is started", async () => {
@@ -33,8 +43,7 @@ describe("HTTP layer", () => {
   });
 
   it("takes the contract and rejects out-of-turn / illegal moves", async () => {
-    await post("/new", { seed: "42" });
-    const taken = (await (await post("/take", { seat: 0 })).json()) as GameState;
+    const taken = await newAndTake("42");
     expect(taken.phase).toBe("playing");
     expect(taken.hands.every((h) => h.length === 8)).toBe(true);
 
@@ -49,10 +58,7 @@ describe("HTTP layer", () => {
   });
 
   it("plays a full hand through to a finished score", async () => {
-    await post("/new", { seed: "42" });
-    await post("/take", { seat: 0 });
-
-    let state = (await (await get("/state")).json()) as GameState;
+    let state: GameState = await newAndTake("42");
     let guard = 0;
     while (state.phase === "playing") {
       expect(guard++).toBeLessThan(40);
@@ -79,21 +85,26 @@ describe("HTTP layer", () => {
   });
 
   it("includes the current turn's legal cards while playing", async () => {
-    await post("/new", { seed: "42" });
-    const playing = (await (await post("/take", { seat: 0 })).json()) as GameState & {
-      legal: unknown[];
-    };
+    const playing = await newAndTake("42");
     // The opener leads, so every card in hand is legal.
     expect(playing.legal).toHaveLength(8);
 
-    const bidding = (await (await post("/new", { seed: "42" })).json()) as {
-      legal: unknown[];
-    };
+    const bidding = (await (await post("/new", { seed: "42" })).json()) as ClientState;
     expect(bidding.legal).toEqual([]); // no legal moves before a take
   });
 
+  it("deals the next hand when everyone passes twice", async () => {
+    let s = (await (await post("/new", { seed: "42" })).json()) as GameState;
+    for (let i = 0; i < 8; i++) {
+      s = (await (await post("/bid", { seat: s.turn, suit: null })).json()) as GameState;
+    }
+    expect(s.phase).toBe("bidding");
+    expect(s.biddingRound).toBe(1);
+    expect(s.seed).toBe("43");
+  });
+
   it("validates request bodies", async () => {
-    const badSeat = await post("/take", { seat: 9 });
+    const badSeat = await post("/bid", { seat: 9 });
     expect(badSeat.status).toBe(400);
     const unknown = await post("/nope", {});
     expect(unknown.status).toBe(404);

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { type Card, type Suit } from "./deck";
+import { type Card, type Suit, SUITS } from "./deck";
 import { type Seat, legalMoves } from "./rules";
 import {
   type GameState,
@@ -37,7 +37,7 @@ describe("reduce — new and guards", () => {
   });
 
   it("rejects actions when there is no game", () => {
-    const r = reduce(null, { type: "take", seat: 0 });
+    const r = reduce(null, { type: "bid", seat: 0, suit: null });
     expect(r).toEqual({ ok: false, error: "no game in progress" });
   });
 
@@ -73,32 +73,102 @@ describe("reduce — new and guards", () => {
   });
 });
 
-describe("reduce — take", () => {
-  it("completes the deal, sets trump, and enters playing", () => {
-    const bidding = createGame("42");
-    const r = reduce(bidding, { type: "take", seat: 1 });
+/** Pass the bid for whoever is on turn. */
+function passOnce(s: GameState): GameState {
+  const r = reduce(s, { type: "bid", seat: s.turn, suit: null });
+  if (!r.ok) throw new Error(r.error);
+  return r.state;
+}
+
+describe("reduce — bidding", () => {
+  it("advances the turn on a pass", () => {
+    const s = createGame("42");
+    const r = reduce(s, { type: "bid", seat: s.opener, suit: null });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.state.phase).toBe("bidding");
+    expect(r.state.turn).toBe(((s.opener + 1) % 4) as Seat);
+    expect(r.state.passes).toBe(1);
+  });
+
+  it("rejects a bid out of turn", () => {
+    const s = createGame("42");
+    const offTurn = ((s.opener + 1) % 4) as Seat;
+    const r = reduce(s, { type: "bid", seat: offTurn, suit: null });
+    expect(r).toEqual({ ok: false, error: "not your turn" });
+  });
+
+  it("takes the retourne suit in the first round and enters playing", () => {
+    const s = createGame("42");
+    const r = reduce(s, {
+      type: "bid",
+      seat: s.opener,
+      suit: s.trumpCard.suit,
+    });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.state.phase).toBe("playing");
     expect(handSizes(r.state)).toEqual([8, 8, 8, 8]);
-    expect(r.state.taker).toBe(1);
-    expect(r.state.trump).toBe(r.state.trumpCard.suit);
-    expect(r.state.turn).toBe(r.state.opener); // opener leads
+    expect(r.state.taker).toBe(s.opener);
+    expect(r.state.trump).toBe(s.trumpCard.suit);
+    expect(r.state.turn).toBe(s.opener); // opener leads
   });
 
-  it("cannot take twice", () => {
-    const playing = reduce(createGame("42"), { type: "take", seat: 1 });
-    expect(playing.ok).toBe(true);
-    if (!playing.ok) return;
-    const again = reduce(playing.state, { type: "take", seat: 2 });
-    expect(again).toEqual({ ok: false, error: "not in bidding phase" });
+  it("rejects taking a different suit in the first round", () => {
+    const s = createGame("42");
+    const other = SUITS.find((x) => x !== s.trumpCard.suit)!;
+    const r = reduce(s, { type: "bid", seat: s.opener, suit: other });
+    expect(r).toEqual({ ok: false, error: "first round takes the turned-up suit" });
+  });
+
+  it("opens the second round after four passes", () => {
+    let s = createGame("42");
+    for (let i = 0; i < 4; i++) s = passOnce(s);
+    expect(s.phase).toBe("bidding");
+    expect(s.biddingRound).toBe(2);
+    expect(s.passes).toBe(0);
+    expect(s.turn).toBe(s.opener);
+  });
+
+  it("takes a different suit in the second round", () => {
+    let s = createGame("42");
+    const retourne = s.trumpCard.suit;
+    for (let i = 0; i < 4; i++) s = passOnce(s);
+    const other = SUITS.find((x) => x !== retourne)!;
+    const r = reduce(s, { type: "bid", seat: s.opener, suit: other });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.state.phase).toBe("playing");
+    expect(r.state.trump).toBe(other);
+    expect(r.state.taker).toBe(s.opener);
+  });
+
+  it("rejects taking the retourne suit in the second round", () => {
+    let s = createGame("42");
+    const retourne = s.trumpCard.suit;
+    for (let i = 0; i < 4; i++) s = passOnce(s);
+    const r = reduce(s, { type: "bid", seat: s.opener, suit: retourne });
+    expect(r).toEqual({
+      ok: false,
+      error: "second round must name a different suit",
+    });
+  });
+
+  it("deals the next hand when everyone passes twice", () => {
+    let s = { ...createGame("42"), scores: [50, 30] as [number, number] };
+    for (let i = 0; i < 8; i++) s = passOnce(s);
+    expect(s.phase).toBe("bidding");
+    expect(s.biddingRound).toBe(1);
+    expect(s.seed).toBe("43"); // next hand
+    expect(s.scores).toEqual([50, 30]); // scores carried over
+    expect(handSizes(s)).toEqual([5, 5, 5, 5]);
   });
 
   it("does not mutate the input state", () => {
-    const bidding = createGame("42");
-    const before = JSON.stringify(bidding);
-    reduce(bidding, { type: "take", seat: 1 });
-    expect(JSON.stringify(bidding)).toBe(before);
+    const s = createGame("42");
+    const before = JSON.stringify(s);
+    reduce(s, { type: "bid", seat: s.opener, suit: s.trumpCard.suit });
+    expect(JSON.stringify(s)).toBe(before);
   });
 });
 
@@ -163,6 +233,14 @@ describe("reduce — play validation", () => {
   });
 });
 
+/** Create a game and have the opener take the retourne suit (enter playing). */
+function takeGame(seed: string): GameState {
+  const g = createGame(seed);
+  const r = reduce(g, { type: "bid", seat: g.opener, suit: g.trumpCard.suit });
+  if (!r.ok) throw new Error(r.error);
+  return r.state;
+}
+
 /** Drive a taken game to the finish, always playing the first legal card. */
 function playToFinish(start: GameState): GameState {
   let state = start;
@@ -185,11 +263,7 @@ function playToFinish(start: GameState): GameState {
 
 describe("reduce — a full hand", () => {
   it("plays eight tricks, scores once, and finishes", () => {
-    const taken = reduce(createGame("42"), { type: "take", seat: 0 });
-    expect(taken.ok).toBe(true);
-    if (!taken.ok) return;
-
-    const final = playToFinish(taken.state);
+    const final = playToFinish(takeGame("42"));
     expect(final.phase).toBe("finished");
     expect(final.tricks).toHaveLength(8);
     expect(handSizes(final)).toEqual([0, 0, 0, 0]);
@@ -206,18 +280,12 @@ describe("reduce — a full hand", () => {
   });
 
   it("is deterministic for a given seed and taker", () => {
-    const run = () => {
-      const taken = reduce(createGame("77"), { type: "take", seat: 3 });
-      if (!taken.ok) throw new Error("take failed");
-      return playToFinish(taken.state).scores;
-    };
+    const run = () => playToFinish(takeGame("77")).scores;
     expect(run()).toEqual(run());
   });
 
   it("rejects play once the hand is finished", () => {
-    const taken = reduce(createGame("42"), { type: "take", seat: 0 });
-    if (!taken.ok) return;
-    const final = playToFinish(taken.state);
+    const final = playToFinish(takeGame("42"));
     const seat = final.tricks[7].winner;
     const r = reduce(final, {
       type: "play",

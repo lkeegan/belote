@@ -91,10 +91,21 @@ function parseAction(
         return { error: "seed must be a string" };
       return { action: { type: "new", seed } };
     }
-    case "/take": {
+    case "/bid": {
       const seat = asSeat(b.seat);
       if (seat === null) return { error: "seat must be 0–3" };
-      return { action: { type: "take", seat } };
+      // No suit (or null) is a pass; otherwise it's a take at that suit.
+      const suit = b.suit;
+      if (suit === undefined || suit === null)
+        return { action: { type: "bid", seat, suit: null } };
+      if (
+        suit !== "hearts" &&
+        suit !== "diamonds" &&
+        suit !== "clubs" &&
+        suit !== "spades"
+      )
+        return { error: "invalid suit" };
+      return { action: { type: "bid", seat, suit } };
     }
     case "/clear":
       return { action: { type: "clear" } };
