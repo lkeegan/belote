@@ -258,6 +258,18 @@ const changeSeat = document.querySelector<HTMLButtonElement>("#change-seat")!;
 const statusEl = document.querySelector<HTMLElement>("#status")!;
 const workerMsg = document.querySelector<HTMLElement>("#worker-msg")!;
 
+/**
+ * The cards to show on the table: the trick in progress, or — while it's empty
+ * between tricks — the trick just completed, so a finished trick lingers on the
+ * table until the winner leads the next card.
+ */
+function shownTrick(s: GameState): TrickPlay[] {
+  if (s.currentTrick.length > 0) return s.currentTrick;
+  if (s.phase !== "bidding" && s.tricks.length > 0)
+    return s.tricks[s.tricks.length - 1].cards;
+  return [];
+}
+
 function renderQuadrant(seat: Seat, s: GameState): HTMLElement {
   const mine = seat === mySeat;
   const bidding = s.phase === "bidding";
@@ -330,7 +342,7 @@ function renderQuadrant(seat: Seat, s: GameState): HTMLElement {
   // The card this seat has played to the current trick, shown full-size in the
   // quadrant's inner corner (nearest the table centre) so it's clear who played
   // what.
-  const played = s.currentTrick.find((p) => p.seat === seat)?.card;
+  const played = shownTrick(s).find((p) => p.seat === seat)?.card;
   if (played) {
     const pc = renderCard(played, { trump: played.suit === s.trump });
     pc.classList.add("played");
@@ -381,17 +393,19 @@ function renderSeatSelect(): HTMLElement {
 
   const prompt = document.createElement("p");
   prompt.className = "seat-select-prompt";
-  prompt.textContent = "Pour qui jouez-vous ?";
+  prompt.textContent = "Qui êtes-vous ?";
   wrap.appendChild(prompt);
 
   const buttons = document.createElement("div");
   buttons.className = "seat-buttons";
-  for (let seat = 0; seat < PLAYERS.length; seat++) {
+  // Lay the buttons out like the players around the table: TL, TR, BL, BR,
+  // which in go-around seat order is 0, 1, 3, 2.
+  for (const seat of [0, 1, 3, 2] as Seat[]) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = `seat-pick ${seat % 2 === 0 ? "gold" : "blue"}`;
     btn.textContent = PLAYERS[seat];
-    btn.addEventListener("click", () => setMySeat(seat as Seat));
+    btn.addEventListener("click", () => setMySeat(seat));
     buttons.appendChild(btn);
   }
   wrap.appendChild(buttons);
@@ -488,7 +502,7 @@ function render(): void {
   if (state.phase === "bidding") table.appendChild(renderRetourne(state));
 
   // Remember which cards are on the table so they don't re-animate next redraw.
-  lastPlayed = new Set(state.currentTrick.map((p) => cardKey(p.card)));
+  lastPlayed = new Set(shownTrick(state).map((p) => cardKey(p.card)));
 }
 
 // --- Wiring -----------------------------------------------------------------
