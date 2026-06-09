@@ -27,11 +27,17 @@ duplicate-free hands.
 
 Deployed on every push to `main`: https://keegan.ch/belote/
 
+## Layout
+
+- `frontend/` — the Vite TypeScript app published to GitHub Pages.
+- `worker/` — a Cloudflare Worker.
+
 ## Development
 
-This project uses [pnpm](https://pnpm.io/).
+The frontend uses [pnpm](https://pnpm.io/).
 
 ```bash
+cd frontend
 pnpm install
 pnpm dev      # start the dev server
 pnpm build    # type-check and build to dist/
@@ -39,14 +45,15 @@ pnpm preview  # preview the production build
 pnpm test     # run the unit tests (Vitest)
 ```
 
-The unit tests (`src/*.test.ts`) cover the dealing logic and also run in CI
-before each deploy.
+The unit tests (`frontend/src/*.test.ts`) cover the dealing logic and also run
+in CI before each deploy.
 
 ## Deployment
 
 Pushing to `main` runs `.github/workflows/deploy.yml`, which installs with pnpm,
-builds the site, and publishes `dist/` to GitHub Pages. Pages is configured to
-deploy from **GitHub Actions** (Settings → Pages → Build and deployment).
+builds the site from `frontend/`, and publishes `frontend/dist/` to GitHub
+Pages. Pages is configured to deploy from **GitHub Actions** (Settings → Pages →
+Build and deployment).
 
 ## License
 
