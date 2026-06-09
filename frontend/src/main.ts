@@ -419,7 +419,7 @@ function renderCenter(s: GameState): HTMLElement {
   if (s.phase === "playing") {
     const turn = document.createElement("span");
     turn.className = "label";
-    turn.textContent = `Au tour de ${PLAYERS[s.turn]}`;
+    turn.textContent = `à ${PLAYERS[s.turn]} de jouer`;
     center.appendChild(turn);
   } else if (s.result) {
     center.appendChild(renderResult(s.result, s.taker!));
