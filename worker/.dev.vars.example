@@ -1,0 +1,3 @@
+# Copy to .dev.vars for local `wrangler dev`. Loaded automatically and
+# overrides the vars in wrangler.jsonc for local development only.
+ENVIRONMENT=development
