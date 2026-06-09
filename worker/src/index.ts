@@ -83,7 +83,7 @@ export default {
 
 		// Call the `sayHello()` RPC method on the stub to invoke the method on
 		// the remote Durable Object instance.
-		const greeting = await stub.sayHello("belote");
+		const greeting = await stub.sayHello("belote worker");
 
 		// Allow only the known frontend origins to read the response in a browser.
 		return new Response(greeting, { headers: corsHeaders(request, env) });
