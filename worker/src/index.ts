@@ -38,6 +38,26 @@ export class MyDurableObject extends DurableObject<Env> {
 	}
 }
 
+// Origins allowed to read the worker's responses from a browser: the deployed
+// frontend plus the local Vite dev and preview servers.
+const ALLOWED_ORIGINS = new Set([
+	"https://keegan.ch",
+	"http://localhost:5173",
+	"http://localhost:4173",
+]);
+
+/**
+ * CORS headers for a request: reflect the Origin back only when it is on the
+ * allowlist, so other sites' browser JS cannot read the response.
+ */
+function corsHeaders(request: Request): Record<string, string> {
+	const origin = request.headers.get("Origin");
+	if (origin && ALLOWED_ORIGINS.has(origin)) {
+		return { "Access-Control-Allow-Origin": origin, Vary: "Origin" };
+	}
+	return { Vary: "Origin" };
+}
+
 export default {
 	/**
 	 * This is the standard fetch handler for a Cloudflare Worker
@@ -59,10 +79,7 @@ export default {
 		// the remote Durable Object instance.
 		const greeting = await stub.sayHello("belote");
 
-		// Allow the GitHub Pages frontend (a different origin) to read the
-		// response from the browser.
-		return new Response(greeting, {
-			headers: { "Access-Control-Allow-Origin": "*" },
-		});
+		// Allow only the known frontend origins to read the response in a browser.
+		return new Response(greeting, { headers: corsHeaders(request) });
 	},
 } satisfies ExportedHandler<Env>;
