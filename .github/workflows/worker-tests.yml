@@ -1,0 +1,28 @@
+name: Worker tests
+
+# Run the worker's test suite on every push and pull request. Deployment is
+# handled separately by Cloudflare Workers Builds, so this workflow only tests.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: worker/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test

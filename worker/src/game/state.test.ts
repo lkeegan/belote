@@ -40,6 +40,37 @@ describe("reduce — new and guards", () => {
     const r = reduce(null, { type: "take", seat: 0 });
     expect(r).toEqual({ ok: false, error: "no game in progress" });
   });
+
+  it("starts the first game with zero scores", () => {
+    const r = reduce(null, { type: "new", seed: "42" });
+    expect(r.ok && r.state.scores).toEqual([0, 0]);
+  });
+
+  it("carries cumulative scores into a new game", () => {
+    const prev = { ...createGame("42"), scores: [120, 42] as [number, number] };
+    const r = reduce(prev, { type: "new", seed: "43" });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.state.seed).toBe("43");
+    expect(r.state.scores).toEqual([120, 42]); // accumulated, not reset
+    expect(r.state.phase).toBe("bidding"); // a fresh hand
+  });
+
+  it("clears accumulated scores", () => {
+    const playing = { ...createGame("42"), scores: [120, 42] as [number, number] };
+    const r = reduce(playing, { type: "clear" });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.state.scores).toEqual([0, 0]);
+    expect(r.state.seed).toBe("42"); // same game, only scores reset
+  });
+
+  it("rejects clear when there is no game", () => {
+    expect(reduce(null, { type: "clear" })).toEqual({
+      ok: false,
+      error: "no game in progress",
+    });
+  });
 });
 
 describe("reduce — take", () => {

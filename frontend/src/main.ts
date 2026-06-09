@@ -234,11 +234,18 @@ const take = (seat: Seat) => act("/take", { seat });
 const play = (seat: Seat, card: Card) =>
   act("/play", { seat, card }, () => void refresh());
 
+/** Reset the cumulative scores (kept across games on the worker). */
+function clearScores(): void {
+  if (!state) return;
+  if (window.confirm("Effacer les scores cumulés ?")) void act("/clear", undefined);
+}
+
 // --- Rendering --------------------------------------------------------------
 
 const seedInput = document.querySelector<HTMLInputElement>("#seed")!;
 const table = document.querySelector<HTMLElement>("#table")!;
 const scoreboard = document.querySelector<HTMLElement>("#scoreboard")!;
+const clearBtn = document.querySelector<HTMLButtonElement>("#clear-scores")!;
 const workerMsg = document.querySelector<HTMLElement>("#worker-msg")!;
 
 function renderQuadrant(seat: Seat, s: GameState): HTMLElement {
@@ -383,6 +390,7 @@ function renderResult(r: HandResult, taker: Seat): HTMLElement {
 }
 
 function renderScoreboard(s: GameState | null): void {
+  clearBtn.hidden = !s;
   if (!s) {
     scoreboard.textContent = "";
     return;
@@ -435,6 +443,8 @@ seedInput.addEventListener("change", () => {
   const value = seedInput.value.trim();
   if (value) newGame(value);
 });
+
+clearBtn.addEventListener("click", clearScores);
 
 const nextGame = document.querySelector<HTMLButtonElement>("#next-game")!;
 nextGame.addEventListener("click", () => {

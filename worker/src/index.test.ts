@@ -70,6 +70,12 @@ describe("HTTP layer", () => {
     expect(state.tricks).toHaveLength(8);
     expect(state.result).toBeDefined();
     expect(state.scores).toEqual(state.result!.handPoints);
+
+    // A new game keeps the cumulative scores; /clear resets them.
+    const carried = (await (await post("/new", { seed: "43" })).json()) as GameState;
+    expect(carried.scores).toEqual(state.scores);
+    const cleared = (await (await post("/clear")).json()) as GameState;
+    expect(cleared.scores).toEqual([0, 0]);
   });
 
   it("includes the current turn's legal cards while playing", async () => {
