@@ -4,7 +4,7 @@
 // either the next state or a validation error. All the rules live here and in
 // rules.ts / scoring.ts, so the Durable Object stays a thin persistence layer.
 
-import { type Card, type Suit, dealBelote, completeDeal } from "./deck";
+import { type Card, type Suit, SUITS, dealBelote, completeDeal } from "./deck";
 import {
   type Seat,
   type TrickPlay,
@@ -29,8 +29,12 @@ export interface GameState {
   /** Trump suit, set once someone takes. */
   trump: Suit | null;
   taker: Seat | null;
-  /** Whose move it is. */
+  /** Whose move it is — the current bidder, or the player to move. */
   turn: Seat;
+  /** Which bidding round is open: 1 takes the retourne suit, 2 names another. */
+  biddingRound: 1 | 2;
+  /** Passes so far in the current bidding round (4 ends the round). */
+  passes: number;
   currentTrick: TrickPlay[];
   tricks: CompletedTrick[];
   /** Cumulative points, [team {0,2}, team {1,3}]. */
@@ -41,7 +45,8 @@ export interface GameState {
 
 export type Action =
   | { type: "new"; seed?: string }
-  | { type: "take"; seat: Seat }
+  // A bid: `suit === null` passes; otherwise the seat takes at that suit.
+  | { type: "bid"; seat: Seat; suit: Suit | null }
   | { type: "play"; seat: Seat; card: Card }
   | { type: "clear" };
 
@@ -87,6 +92,8 @@ export function createGame(seed: string): GameState {
     trump: null,
     taker: null,
     turn: opener,
+    biddingRound: 1,
+    passes: 0,
     currentTrick: [],
     tricks: [],
     scores: [0, 0],
@@ -113,8 +120,8 @@ export function reduce(state: GameState | null, action: Action): ReduceResult {
   if (!state) return err("no game in progress");
 
   switch (action.type) {
-    case "take":
-      return take(state, action.seat);
+    case "bid":
+      return bid(state, action.seat, action.suit);
     case "play":
       return play(state, action.seat, action.card);
     case "clear":
@@ -122,18 +129,49 @@ export function reduce(state: GameState | null, action: Action): ReduceResult {
   }
 }
 
-function take(state: GameState, seat: Seat): ReduceResult {
+/**
+ * A bid by `seat`. `suit === null` is a pass; otherwise the seat takes at that
+ * suit — in round 1 it must be the turned-up suit, in round 2 a different one.
+ * Four passes ends the round: round 1 opens round 2, round 2 deals the next
+ * hand (keeping the running scores).
+ */
+function bid(state: GameState, seat: Seat, suit: Suit | null): ReduceResult {
   if (state.phase !== "bidding") return err("not in bidding phase");
   if (!isSeat(seat)) return err("invalid seat");
+  if (seat !== state.turn) return err("not your turn");
 
-  const { hands, trumpSuit } = completeDeal(state.seed, seat);
+  if (suit === null) {
+    const passes = state.passes + 1;
+    if (passes < 4) {
+      return { ok: true, state: { ...state, passes, turn: nextSeat(seat) } };
+    }
+    if (state.biddingRound === 1) {
+      // Everyone passed the retourne; open the second round from the opener.
+      return {
+        ok: true,
+        state: { ...state, biddingRound: 2, passes: 0, turn: state.opener },
+      };
+    }
+    // Passed twice over: redeal the next hand, keeping cumulative scores.
+    const next = createGame(String((parseInt(state.seed, 10) || 0) + 1));
+    next.scores = [...state.scores];
+    return { ok: true, state: next };
+  }
+
+  if (!SUITS.includes(suit)) return err("invalid suit");
+  if (state.biddingRound === 1 && suit !== state.trumpCard.suit)
+    return err("first round takes the turned-up suit");
+  if (state.biddingRound === 2 && suit === state.trumpCard.suit)
+    return err("second round must name a different suit");
+
+  const { hands } = completeDeal(state.seed, seat);
   return {
     ok: true,
     state: {
       ...state,
       phase: "playing",
       hands,
-      trump: trumpSuit,
+      trump: suit,
       taker: seat,
       turn: state.opener,
       currentTrick: [],

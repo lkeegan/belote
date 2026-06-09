@@ -182,6 +182,56 @@ body {
   color: #14502c;
 }
 
+/* Small "passe" marker on seats that have already passed this round. */
+.pass-tag {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  opacity: 0.85;
+}
+
+/* Bid controls (pass / take) for the seat currently bidding. */
+.bid-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.bid {
+  font-size: 0.95rem;
+  padding: 0.4rem 0.9rem;
+  border: none;
+  border-radius: 999px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+.bid:hover {
+  filter: brightness(1.1);
+}
+.bid.pass {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+.bid.take-suit {
+  background: #f5c542;
+  color: #14502c;
+}
+.bid.take-suit .suit {
+  font-size: 1.1rem;
+}
+.bid.take-suit.red .suit {
+  color: #d4163c;
+}
+.bid.take-suit.black .suit {
+  color: #14502c;
+}
+
 .starter-badge {
   font-size: 0.75rem;
   font-weight: 700;
@@ -421,7 +471,8 @@ body {
   line-height: 1.45;
 }
 
-/* During play and at the result the centre grows to fit its contents. */
+/* During bidding, play, and the result the centre grows to fit its contents. */
+.table-center.bidding,
 .table-center.playing,
 .table-center.finished {
   width: auto;
