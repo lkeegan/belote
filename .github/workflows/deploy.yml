@@ -35,6 +35,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
       - run: pnpm build
+        env:
+          VITE_WORKER_URL: https://belote-worker.liam-9fd.workers.dev
       - uses: actions/upload-pages-artifact@v5
         with:
           path: frontend/dist
