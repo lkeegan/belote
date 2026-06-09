@@ -96,6 +96,8 @@ function parseAction(
       if (seat === null) return { error: "seat must be 0–3" };
       return { action: { type: "take", seat } };
     }
+    case "/clear":
+      return { action: { type: "clear" } };
     case "/play": {
       const seat = asSeat(b.seat);
       if (seat === null) return { error: "seat must be 0–3" };

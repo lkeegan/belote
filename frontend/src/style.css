@@ -95,19 +95,30 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+/* Pin each seat to its physical grid cell by class, independent of DOM order,
+   so play (seats 0→1→2→3 = TL→TR→BR→BL) runs clockwise and partners sit
+   diagonally opposite. */
 .corner-tl {
+  grid-column: 1;
+  grid-row: 1;
   align-items: flex-start;
   justify-content: flex-start;
 }
 .corner-tr {
+  grid-column: 2;
+  grid-row: 1;
   align-items: flex-end;
   justify-content: flex-start;
 }
 .corner-bl {
+  grid-column: 1;
+  grid-row: 2;
   align-items: flex-start;
   justify-content: flex-end;
 }
 .corner-br {
+  grid-column: 2;
+  grid-row: 2;
   align-items: flex-end;
   justify-content: flex-end;
 }
@@ -417,6 +428,20 @@ body {
 }
 .scoreboard .sep {
   opacity: 0.6;
+}
+
+#clear-scores {
+  font-size: 0.8rem;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 999px;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+  opacity: 0.8;
+}
+#clear-scores:hover {
+  opacity: 1;
 }
 
 /* Shrink cards on small or short screens so eight fit a corner without

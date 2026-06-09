@@ -42,7 +42,8 @@ export interface GameState {
 export type Action =
   | { type: "new"; seed?: string }
   | { type: "take"; seat: Seat }
-  | { type: "play"; seat: Seat; card: Card };
+  | { type: "play"; seat: Seat; card: Card }
+  | { type: "clear" };
 
 export type ReduceResult =
   | { ok: true; state: GameState }
@@ -103,7 +104,10 @@ function err(message: string): ReduceResult {
 /** Apply an action to the state, returning the next state or a validation error. */
 export function reduce(state: GameState | null, action: Action): ReduceResult {
   if (action.type === "new") {
-    return { ok: true, state: createGame(action.seed ?? todaySeed()) };
+    const game = createGame(action.seed ?? todaySeed());
+    // Carry cumulative scores across games; the "clear" action resets them.
+    if (state) game.scores = [...state.scores];
+    return { ok: true, state: game };
   }
 
   if (!state) return err("no game in progress");
@@ -113,6 +117,8 @@ export function reduce(state: GameState | null, action: Action): ReduceResult {
       return take(state, action.seat);
     case "play":
       return play(state, action.seat, action.card);
+    case "clear":
+      return { ok: true, state: { ...state, scores: [0, 0] } };
   }
 }
 
