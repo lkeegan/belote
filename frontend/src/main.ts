@@ -144,22 +144,52 @@ interface GameState {
 // Base URL of the Cloudflare Worker. Defaults to the local `wrangler dev`
 // server; set VITE_WORKER_URL at build time to point at the deployed worker.
 const WORKER_URL = import.meta.env.VITE_WORKER_URL ?? "http://localhost:8787";
+// The same endpoint over the WebSocket scheme (http→ws, https→wss).
+const WS_URL = WORKER_URL.replace(/^http/, "ws");
 
-/** Call the worker. Returns the game state, or null when no game exists. */
-async function api(
-  path: string,
-  method: "GET" | "POST" = "GET",
-  body?: unknown,
-): Promise<GameState | null> {
-  const res = await fetch(WORKER_URL + path, {
-    method,
-    headers: body ? { "Content-Type": "application/json" } : {},
-    body: body ? JSON.stringify(body) : undefined,
+// The single live socket to the worker. Actions are sent over it; state
+// arrives as broadcasts pushed by the worker, so there is no polling.
+let socket: WebSocket | null = null;
+
+/** Open the socket and keep it open, reconnecting if it drops. */
+function connect(): void {
+  socket = new WebSocket(WS_URL);
+
+  socket.addEventListener("open", () => {
+    offline = false;
+    renderStatus();
   });
-  if (res.status === 404) return null;
-  const data = await res.json();
-  if (!res.ok) throw new Error((data as { error?: string }).error ?? `HTTP ${res.status}`);
-  return data as GameState;
+
+  socket.addEventListener("message", (ev) => {
+    const data = JSON.parse(ev.data as string);
+    if (data && typeof data === "object" && "error" in data) {
+      // No game yet → deal the first hand. Action rejections (e.g. an illegal
+      // move) need no handling: every client already holds authoritative state.
+      if (data.error === "no game in progress") send("/new", undefined);
+      return;
+    }
+    state = data as GameState;
+    offline = false;
+    render();
+  });
+
+  socket.addEventListener("close", () => {
+    offline = true;
+    renderStatus();
+    setTimeout(connect, 1000); // reconnect; the worker pushes fresh state on open
+  });
+
+  socket.addEventListener("error", () => socket?.close());
+}
+
+/** Fire an action. The resulting state arrives as a broadcast, not a reply. */
+function send(path: string, body: unknown): void {
+  if (socket?.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify({ path, body }));
+  } else {
+    offline = true;
+    renderStatus();
+  }
 }
 
 // This device plays for a single seat, chosen up front and remembered. Only
@@ -188,7 +218,6 @@ function setMySeat(seat: Seat | null): void {
 
 let state: GameState | null = null;
 let mySeat: Seat | null = loadSeat();
-let busy = false; // an action is in flight; pause polling
 let offline = false;
 // Played-card keys shown last render, so only freshly played cards animate in
 // (render rebuilds the DOM on every poll).
@@ -196,57 +225,23 @@ let lastPlayed = new Set<string>();
 
 // --- Actions ----------------------------------------------------------------
 
-/** Fetch the current game and re-render (skipped while an action is running). */
-async function refresh(): Promise<void> {
-  if (busy) return;
-  try {
-    state = await api("/state");
-    offline = false;
-    render();
-  } catch {
-    offline = true;
-    renderStatus();
-  }
-}
-
-/** Run an action against the worker, adopting the returned state. */
-async function act(
-  path: string,
-  body: unknown,
-  onError?: (message: string) => void,
-): Promise<void> {
-  busy = true;
-  try {
-    const next = await api(path, "POST", body);
-    offline = false;
-    if (next) state = next;
-  } catch (e) {
-    if (e instanceof Error && e.message.startsWith("HTTP")) offline = true;
-    onError?.(e instanceof Error ? e.message : String(e));
-  } finally {
-    busy = false;
-    render();
-  }
-}
-
 /** Deal a fresh hand, confirming first if one is already under way. */
 function newGame(): void {
   if (state && state.phase !== "finished") {
     if (!window.confirm("Une partie est en cours. Distribuer une nouvelle donne ?"))
       return;
   }
-  void act("/new", undefined);
+  send("/new", undefined);
 }
 
 // A bid: pass (suit null) or take at a suit.
-const bid = (seat: Seat, suit: Suit | null) => act("/bid", { seat, suit });
-const play = (seat: Seat, card: Card) =>
-  act("/play", { seat, card }, () => void refresh());
+const bid = (seat: Seat, suit: Suit | null) => send("/bid", { seat, suit });
+const play = (seat: Seat, card: Card) => send("/play", { seat, card });
 
 /** Reset the cumulative scores (kept across games on the worker). */
 function clearScores(): void {
   if (!state) return;
-  if (window.confirm("Effacer les scores cumulés ?")) void act("/clear", undefined);
+  if (window.confirm("Effacer les scores cumulés ?")) send("/clear", undefined);
 }
 
 // --- Rendering --------------------------------------------------------------
@@ -513,19 +508,6 @@ changeSeat.addEventListener("click", () => setMySeat(null));
 const nextGame = document.querySelector<HTMLButtonElement>("#next-game")!;
 nextGame.addEventListener("click", () => newGame());
 
-/** On load, adopt the worker's current game, or deal the first hand if none. */
-async function init(): Promise<void> {
-  try {
-    state = await api("/state");
-    offline = false;
-    if (!state) await act("/new", undefined);
-    else render();
-  } catch {
-    offline = true;
-    render();
-  }
-}
-
-void init();
-// Poll for other players' moves.
-setInterval(() => void refresh(), 2000);
+// Open the socket. On connect the worker pushes the current game (or signals
+// none, prompting the first deal), and every later move arrives as a broadcast.
+connect();
