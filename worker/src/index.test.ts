@@ -19,7 +19,12 @@ const openSockets: WebSocket[] = [];
 
 beforeEach(async () => {
   const stub = env.BELOTE_GAME.getByName(GAME_NAME);
-  await runInDurableObject(stub, (_instance, state) => state.storage.deleteAll());
+  await runInDurableObject(stub, async (instance, state) => {
+    await state.storage.deleteAll();
+    // The object caches state in memory; clearing storage out-of-band (as only
+    // a test does) would otherwise leave the cache holding the previous game.
+    (instance as unknown as { cached: undefined }).cached = undefined;
+  });
 });
 
 afterEach(() => {

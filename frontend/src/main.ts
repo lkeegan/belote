@@ -150,6 +150,12 @@ const WS_URL = WORKER_URL.replace(/^http/, "ws");
 // The single live socket to the worker. Actions are sent over it; state
 // arrives as broadcasts pushed by the worker, so there is no polling.
 let socket: WebSocket | null = null;
+// Delay before the next reconnect attempt. It doubles on each failure (up to a
+// cap) so a redeploy or network blip doesn't turn into a tight reconnect loop —
+// each attempt is a billed worker request — and resets once a connection opens.
+const RECONNECT_MIN = 1000;
+const RECONNECT_MAX = 30000;
+let reconnectDelay = RECONNECT_MIN;
 
 /** Open the socket and keep it open, reconnecting if it drops. */
 function connect(): void {
@@ -157,6 +163,7 @@ function connect(): void {
 
   socket.addEventListener("open", () => {
     offline = false;
+    reconnectDelay = RECONNECT_MIN;
     renderStatus();
   });
 
@@ -176,7 +183,9 @@ function connect(): void {
   socket.addEventListener("close", () => {
     offline = true;
     renderStatus();
-    setTimeout(connect, 1000); // reconnect; the worker pushes fresh state on open
+    // Reconnect with backoff; the worker pushes fresh state once it opens.
+    setTimeout(connect, reconnectDelay);
+    reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX);
   });
 
   socket.addEventListener("error", () => socket?.close());
