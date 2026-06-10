@@ -46,6 +46,74 @@ export class BeloteGame extends DurableObject<Env> {
     if (result.ok) await this.ctx.storage.put(STATE_KEY, result.state);
     return result;
   }
+
+  /**
+   * Handle a WebSocket upgrade. The top-level worker forwards upgrade requests
+   * here after validating the Origin. The socket is accepted via the
+   * hibernation API so the runtime may evict this object from memory while
+   * connections stay open — idle tables are not billed for duration.
+   */
+  async fetch(request: Request): Promise<Response> {
+    if (request.headers.get("Upgrade") !== "websocket") {
+      return new Response("expected websocket", { status: 426 });
+    }
+    const { 0: client, 1: server } = new WebSocketPair();
+    this.ctx.acceptWebSocket(server);
+
+    // Send the current state immediately so the new client renders at once.
+    const state = await this.getState();
+    server.send(
+      JSON.stringify(state ? toClientState(state) : { error: "no game in progress" }),
+    );
+    return new Response(null, { status: 101, webSocket: client });
+  }
+
+  /**
+   * A client sent an action over its socket. Validate it with the same parser
+   * the REST endpoints used, apply it, and broadcast the new state to everyone.
+   * Rejections go only to the sender, whose action changed nothing.
+   */
+  async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
+    let envelope: { path?: unknown; body?: unknown };
+    try {
+      const text =
+        typeof message === "string" ? message : new TextDecoder().decode(message);
+      envelope = JSON.parse(text);
+    } catch {
+      ws.send(JSON.stringify({ error: "invalid message" }));
+      return;
+    }
+    const parsed = parseAction(String(envelope.path), envelope.body);
+    if ("error" in parsed) {
+      ws.send(JSON.stringify({ error: parsed.error }));
+      return;
+    }
+    const result = await this.apply(parsed.action);
+    if (!result.ok) {
+      ws.send(JSON.stringify({ error: result.error }));
+      return;
+    }
+    this.broadcast(toClientState(result.state as GameState));
+  }
+
+  /**
+   * A socket closed or errored. There is nothing to clean up — getWebSockets()
+   * stops reporting it on its own — but a hibernatable object must define these
+   * handlers, or the runtime throws when delivering the event.
+   */
+  webSocketClose(ws: WebSocket): void {
+    ws.close();
+  }
+  webSocketError(): void {}
+
+  /**
+   * Send a payload to every open socket. getWebSockets() reflects the live
+   * connections (and survives hibernation), so we keep no list of our own.
+   */
+  private broadcast(payload: unknown): void {
+    const text = JSON.stringify(payload);
+    for (const ws of this.ctx.getWebSockets()) ws.send(text);
+  }
 }
 
 // The deployed frontend; always allowed to read the worker's responses. The
@@ -57,20 +125,18 @@ const PROD_ORIGINS = new Set(["https://www.keegan.ch", "https://keegan.ch"]);
 const DEV_ORIGINS = new Set(["http://localhost:5173", "http://localhost:4173"]);
 
 /**
- * CORS headers for a request: reflect the Origin back only when it is allowed,
- * so other sites' browser JS cannot read the response. localhost origins are
+ * Whether a request's Origin is allowed to connect. WebSockets are not subject
+ * to CORS — the browser sends an Origin header but does not block on it — so we
+ * must enforce the allow-list ourselves before upgrading. localhost origins are
  * accepted only in local development, signalled by ENVIRONMENT=development
  * (set in .dev.vars, which `wrangler dev` loads; the deployed worker uses the
  * "production" value from wrangler.jsonc).
  */
-function corsHeaders(request: Request, env: Env): Record<string, string> {
+function originAllowed(request: Request, env: Env): boolean {
   const isDev = env.ENVIRONMENT === "development";
   const allowed = isDev ? new Set([...PROD_ORIGINS, ...DEV_ORIGINS]) : PROD_ORIGINS;
   const origin = request.headers.get("Origin");
-  if (origin && allowed.has(origin)) {
-    return { "Access-Control-Allow-Origin": origin, Vary: "Origin" };
-  }
-  return { Vary: "Origin" };
+  return origin !== null && allowed.has(origin);
 }
 
 /** A seat index 0–3, if `value` is one. */
@@ -126,53 +192,18 @@ function parseAction(
 
 export default {
   async fetch(request, env): Promise<Response> {
-    const cors = corsHeaders(request, env);
-    const json = (body: unknown, status = 200): Response =>
-      new Response(JSON.stringify(body), {
-        status,
-        headers: { ...cors, "Content-Type": "application/json" },
-      });
-
-    if (request.method === "OPTIONS") {
-      return new Response(null, {
-        status: 204,
-        headers: {
-          ...cors,
-          "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type",
-        },
-      });
-    }
-
-    const url = new URL(request.url);
-    const stub = env.BELOTE_GAME.getByName(GAME_NAME);
-
-    if (request.method === "GET" && url.pathname === "/state") {
-      // The Durable Object RPC boundary widens tuple types (e.g. scores) to
-      // arrays; the runtime value is unchanged, so cast back to GameState.
-      const state = (await stub.getState()) as GameState | null;
-      return state
-        ? json(toClientState(state))
-        : json({ error: "no game in progress" }, 404);
-    }
-
-    if (request.method === "POST") {
-      let body: unknown;
-      try {
-        body = await request.json();
-      } catch {
-        body = {};
+    // The only route: a WebSocket upgrade. Clients open one socket, send
+    // actions over it, and receive state broadcasts in return — there is no
+    // longer any REST polling. Validate the Origin ourselves (CORS does not
+    // apply to WebSockets) and hand the socket to the single game object.
+    if (request.headers.get("Upgrade") === "websocket") {
+      if (!originAllowed(request, env)) {
+        return new Response("forbidden origin", { status: 403 });
       }
-      const parsed = parseAction(url.pathname, body);
-      if ("error" in parsed) {
-        return json({ error: parsed.error }, parsed.error === "not found" ? 404 : 400);
-      }
-      const result = await stub.apply(parsed.action);
-      return result.ok
-        ? json(toClientState(result.state as GameState))
-        : json({ error: result.error }, 400);
+      const stub = env.BELOTE_GAME.getByName(GAME_NAME);
+      return stub.fetch(request);
     }
 
-    return json({ error: "not found" }, 404);
+    return new Response("not found", { status: 404 });
   },
 } satisfies ExportedHandler<Env>;
