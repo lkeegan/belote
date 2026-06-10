@@ -34,16 +34,28 @@ const STATE_KEY = "state";
  * result, and reports back. All the rules live in `./game`.
  */
 export class BeloteGame extends DurableObject<Env> {
+  // The authoritative state, held in memory. This object is the only writer of
+  // its one storage key, so the field can serve reads without touching storage;
+  // `undefined` means "not yet loaded" (the field is empty after a hibernation
+  // eviction), which triggers a single reload.
+  private cached: GameState | null | undefined;
+
   /** The current game state, or null if no game has been started. */
   async getState(): Promise<GameState | null> {
-    return (await this.ctx.storage.get<GameState>(STATE_KEY)) ?? null;
+    if (this.cached === undefined) {
+      this.cached = (await this.ctx.storage.get<GameState>(STATE_KEY)) ?? null;
+    }
+    return this.cached;
   }
 
   /** Apply an action, persisting and returning the next state, or an error. */
   async apply(action: Action): Promise<ReduceResult> {
     const current = await this.getState();
     const result = reduce(current, action);
-    if (result.ok) await this.ctx.storage.put(STATE_KEY, result.state);
+    if (result.ok) {
+      this.cached = result.state;
+      await this.ctx.storage.put(STATE_KEY, result.state);
+    }
     return result;
   }
 
