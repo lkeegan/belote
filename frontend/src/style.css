@@ -50,12 +50,6 @@ body {
   background: rgba(0, 0, 0, 0.25);
 }
 
-.topbar h1 {
-  margin: 0;
-  font-size: 1.5rem;
-  letter-spacing: 0.05em;
-}
-
 /* --- Table --- */
 
 #table {
@@ -333,10 +327,14 @@ body {
 /* --- Cards --- */
 
 .cards {
+  --card-gap: 0.4rem;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
-  max-width: 46vw;
+  gap: var(--card-gap);
+  /* Cap the hand at exactly four card columns so eight cards lay out as two
+     rows of four. This keeps the top row from reaching into the inner corner
+     of the quadrant, where played cards land. */
+  max-width: calc(4 * var(--card-w) + 3 * var(--card-gap));
 }
 
 .corner-tr .cards,
@@ -557,7 +555,7 @@ body {
   }
 
   .cards {
-    gap: 0.25rem;
+    --card-gap: 0.25rem;
   }
 
   .seat-head {
