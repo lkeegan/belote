@@ -2,6 +2,14 @@
   --felt: #1b6b3a;
   --felt-dark: #14502c;
   color-scheme: light;
+
+  /* Cards scale fluidly with the viewport so a full hand of eight always fits
+     inside its quadrant — on a phone, an iPad, or a laptop. We size off the
+     smaller of width/height (a quadrant is bounded by both) and cap at the
+     original desktop dimensions. Everything inside a card is derived from this
+     via container queries (see .card), so the whole UI tracks one number. */
+  --card-w: clamp(42px, min(8.5vw, 13vh), 112px);
+  --card-h: calc(var(--card-w) * 10 / 7);
 }
 
 * {
@@ -188,8 +196,11 @@ body {
 }
 
 .bid {
-  font-size: 1.9rem;
-  padding: 0.8rem 1.8rem;
+  /* Scale with viewport height (the quadrant below the hand is height-bound)
+     so the buttons stay big on a laptop but shrink to fit under the cards on
+     an iPad or phone instead of being clipped. */
+  font-size: clamp(0.85rem, 3.5vh, 1.9rem);
+  padding: clamp(0.3rem, 1.2vh, 0.8rem) clamp(0.7rem, 2.6vh, 1.8rem);
   border: none;
   border-radius: 999px;
   font-weight: 700;
@@ -208,7 +219,7 @@ body {
   color: #14502c;
 }
 .bid.take-suit .suit {
-  font-size: 2.2rem;
+  font-size: clamp(1.1rem, 4vh, 2.2rem);
 }
 .bid.take-suit.red .suit {
   color: #d4163c;
@@ -335,8 +346,11 @@ body {
 
 .card {
   position: relative;
-  width: 112px;
-  height: 160px;
+  width: var(--card-w);
+  height: var(--card-h);
+  /* Become a size container so the rank/suit text and pip scale with the card
+     (sizes below are expressed in cqw — % of the card's own width). */
+  container-type: size;
   background: #fff;
   border: 1px solid #d9d9d9;
   border-radius: 10px;
@@ -386,26 +400,26 @@ body {
   border: 2px solid #fff;
 }
 
-/* Hidden hands show a small fanned stack of backs. */
+/* Hidden hands show a small fanned stack of backs (overlap ~64% of a card). */
 .cards.backs .card.back:not(:first-child) {
-  margin-left: -72px;
+  margin-left: calc(var(--card-w) * -0.64);
 }
 
 .corner-mark {
   position: absolute;
-  font-size: 1.35rem;
+  font-size: 19cqw;
   line-height: 0.85;
   text-align: center;
 }
 
 .corner-mark.top {
-  top: 8px;
-  left: 9px;
+  top: 7cqw;
+  left: 8cqw;
 }
 
 .corner-mark.bottom {
-  bottom: 8px;
-  right: 9px;
+  bottom: 7cqw;
+  right: 8cqw;
   transform: rotate(180deg);
 }
 
@@ -415,7 +429,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 3.5rem;
+  font-size: 50cqw;
 }
 
 /* --- Title-bar status line --- */
@@ -532,45 +546,22 @@ body {
   opacity: 1;
 }
 
-/* Shrink cards on small or short screens so eight fit a corner without
-   scrolling or clipping. */
+/* Card sizing is fluid (see --card-w), so it no longer needs breakpoints.
+   On small or short screens we still tighten the surrounding chrome — padding,
+   gaps and names — so the seat header and bid controls keep their room and
+   stay visible above each hand. */
 @media (max-width: 760px), (max-height: 620px) {
   .quadrant {
     padding: 0.6rem;
     gap: 0.35rem;
   }
 
-  .card {
-    width: 60px;
-    height: 86px;
-    border-radius: 6px;
-  }
-
-  .corner-mark {
-    font-size: 0.85rem;
-  }
-
-  .corner-mark.top {
-    top: 4px;
-    left: 5px;
-  }
-
-  .corner-mark.bottom {
-    bottom: 4px;
-    right: 5px;
-  }
-
-  .pip {
-    font-size: 1.9rem;
-  }
-
   .cards {
     gap: 0.25rem;
-    max-width: 48vw;
   }
 
-  .cards.backs .card.back:not(:first-child) {
-    margin-left: -40px;
+  .seat-head {
+    gap: 0.5rem;
   }
 
   .seat-head .name {
