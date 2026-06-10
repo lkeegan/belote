@@ -366,7 +366,7 @@ function renderBidControls(s: GameState, seat: Seat): HTMLElement {
   const passBtn = document.createElement("button");
   passBtn.type = "button";
   passBtn.className = "bid pass";
-  passBtn.textContent = "Non";
+  passBtn.textContent = s.biddingRound === 1 ? "Non" : "Deux";
   passBtn.addEventListener("click", () => void bid(seat, null));
   wrap.appendChild(passBtn);
 
