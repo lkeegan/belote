@@ -1,5 +1,6 @@
 import "./style.css";
 import { SUITS, RANKS, type Card, type Rank, type Suit } from "./deck";
+import { clearEffect, playResultEffect } from "./effects";
 
 // Players sit in the four corners, numbered in go-around play order to match
 // the worker's seats: 0 → 1 → 2 → 3 → 0 around the table. Partners sit
@@ -275,11 +276,14 @@ function syncSummary(): void {
       summaryTimer = window.setTimeout(() => {
         summaryTimer = null;
         summaryRevealed = true;
+        // Match the effect to the outcome as the box appears.
+        if (state?.result) playResultEffect(state.result);
         render();
       }, SUMMARY_DELAY_MS);
     }
   } else {
     summaryRevealed = false;
+    clearEffect(); // stop any weather once the next hand starts
     if (summaryTimer !== null) {
       clearTimeout(summaryTimer);
       summaryTimer = null;
