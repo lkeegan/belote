@@ -142,6 +142,7 @@ interface Annonce {
 }
 interface HandResult {
   handPoints: [number, number];
+  cardPoints: [number, number];
   madeContract: boolean;
   capot: boolean;
   beloteTeam: 0 | 1 | null;
@@ -545,8 +546,8 @@ function renderResultBox(s: GameState): HTMLElement {
       <span class="blue">${TEAM_NAME[1]}</span>
 
       <span class="rlabel">Points faits</span>
-      <span>${r.handPoints[0]}</span>
-      <span>${r.handPoints[1]}</span>
+      <span>${r.cardPoints[0]}</span>
+      <span>${r.cardPoints[1]}</span>
 
       <span class="rlabel">Annonces</span>
       <span>${cell(r.annonceTeam, 0, r.annoncePoints)}</span>
