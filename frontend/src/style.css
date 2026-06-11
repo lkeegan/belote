@@ -7,8 +7,13 @@
      inside its quadrant — on a phone, an iPad, or a laptop. We size off the
      smaller of width/height (a quadrant is bounded by both) and cap at the
      original desktop dimensions. Everything inside a card is derived from this
-     via container queries (see .card), so the whole UI tracks one number. */
-  --card-w: clamp(42px, min(8.5vw, 10.5vh), 112px);
+     via container queries (see .card), so the whole UI tracks one number.
+
+     The vh term is deliberately small: a quadrant is only half the viewport
+     height yet stacks two card rows *plus* the seat header and bid buttons, so
+     in landscape (where height is the binding axis) two rows must leave room
+     for the controls underneath — otherwise they overflow and get clipped. */
+  --card-w: clamp(42px, min(8.5vw, 8.5vh), 112px);
   --card-h: calc(var(--card-w) * 10 / 7);
 }
 
