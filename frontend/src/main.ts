@@ -426,7 +426,12 @@ function renderQuadrant(seat: Seat, s: GameState): HTMLElement {
   // The card this seat has played to the current trick, shown full-size in the
   // quadrant's inner corner (nearest the table centre) so it's clear who played
   // what.
-  const played = shownTrick(s).find((p) => p.seat === seat)?.card;
+  // Once the hand is finished the summary box takes the centre, so the final
+  // trick's four cards are hidden rather than left lingering in the corners.
+  const played =
+    s.phase === "finished"
+      ? undefined
+      : shownTrick(s).find((p) => p.seat === seat)?.card;
   if (played) {
     // Clicking your own card takes the move back entirely while it is still on
     // top — no one has covered it. (Covers a trick's fourth card too, which
@@ -522,7 +527,12 @@ function renderResultBox(s: GameState): HTMLElement {
     : r.madeContract
       ? "Contrat réussi"
       : "Dedans";
-  const atout = s.trump ? suitHtml(s.trump) : "—";
+  // Dix de der (10 for the last trick) goes to whoever won the final trick.
+  const derTeam =
+    s.tricks.length > 0 ? ((s.tricks[s.tricks.length - 1].winner % 2) as 0 | 1) : null;
+  // A cell showing `pts` only in the column of the team that earned it.
+  const cell = (team: 0 | 1 | null, col: 0 | 1, pts: number) =>
+    team === col ? `${pts}` : "—";
 
   const box = document.createElement("div");
   box.className = "result-box";
@@ -538,8 +548,17 @@ function renderResultBox(s: GameState): HTMLElement {
       <span>${r.handPoints[0]}</span>
       <span>${r.handPoints[1]}</span>
 
-      <span class="rlabel">Atout</span>
-      <span class="atout">${atout}</span>
+      <span class="rlabel">Annonces</span>
+      <span>${cell(r.annonceTeam, 0, r.annoncePoints)}</span>
+      <span>${cell(r.annonceTeam, 1, r.annoncePoints)}</span>
+
+      <span class="rlabel">Dix de der</span>
+      <span>${cell(derTeam, 0, 10)}</span>
+      <span>${cell(derTeam, 1, 10)}</span>
+
+      <span class="rlabel">Belote</span>
+      <span>${cell(r.beloteTeam, 0, 20)}</span>
+      <span>${cell(r.beloteTeam, 1, 20)}</span>
 
       <span class="rlabel total">Total</span>
       <span class="total">${s.scores[0]}</span>
