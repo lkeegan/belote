@@ -498,6 +498,18 @@ body {
   --fy: 15vmin;
 }
 
+/* Your own card while it is still the topmost of the trick: click it to take
+   the move back. `.played` is otherwise inert (pointer-events: none). */
+.played.takeback {
+  pointer-events: auto;
+  cursor: pointer;
+  outline: 3px dashed #f5c542;
+  transition: transform 0.1s ease;
+}
+.played.takeback:hover {
+  transform: scale(1.05);
+}
+
 /* Slide a freshly played card from the hand into its corner. */
 .played.deal-in {
   animation: play-card 0.3s ease-out;
