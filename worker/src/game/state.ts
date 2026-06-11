@@ -59,6 +59,8 @@ export type Action =
   | { type: "play"; seat: Seat; card: Card }
   // Take back the last card played to the current trick (only its player may).
   | { type: "undo"; seat: Seat }
+  // Swap the last played card for another (take back, then play in its place).
+  | { type: "replace"; seat: Seat; card: Card }
   | { type: "clear" };
 
 export type ReduceResult =
@@ -123,6 +125,8 @@ export function reduce(
       return play(state, action.seat, action.card);
     case "undo":
       return undo(state, action.seat);
+    case "replace":
+      return replace(state, action.seat, action.card);
     case "clear":
       return { ok: true, state: { ...state, scores: [0, 0] } };
   }
@@ -258,17 +262,20 @@ function play(state: GameState, seat: Seat, card: Card): ReduceResult {
  * trick, which finishes the hand: its last card was the player's only legal one,
  * so there is nothing to reconsider, and `phase !== "playing"` rules it out.
  */
+/** The cards of the trick on the table: the one in progress, or — when none is
+ *  — the trick that just completed and still shows until the winner leads. */
+function tableTrick(state: GameState): TrickPlay[] {
+  return state.currentTrick.length > 0
+    ? state.currentTrick
+    : (state.tricks[state.tricks.length - 1]?.cards ?? []);
+}
+
 function undo(state: GameState, seat: Seat): ReduceResult {
   if (state.phase !== "playing") return err("not in playing phase");
   if (!isSeat(seat)) return err("invalid seat");
 
-  // The cards on the table: the trick in progress, or — when none is — the one
-  // that just completed and still shows until the winner leads.
   const inProgress = state.currentTrick.length > 0;
-  const cards = inProgress
-    ? state.currentTrick
-    : (state.tricks[state.tricks.length - 1]?.cards ?? []);
-
+  const cards = tableTrick(state);
   const top = cards[cards.length - 1];
   if (!top) return err("no card to take back");
   if (top.seat !== seat)
@@ -287,4 +294,34 @@ function undo(state: GameState, seat: Seat): ReduceResult {
       turn: seat,
     },
   };
+}
+
+/**
+ * Swap the last played card for another: take it back, then play `card` in its
+ * place. Only the seat that played the topmost card may, and only for a legal
+ * replacement — both checks fall out of composing `undo` with `play`.
+ */
+function replace(state: GameState, seat: Seat, card: Card): ReduceResult {
+  const undone = undo(state, seat);
+  if (!undone.ok) return undone;
+  return play(undone.state, seat, card);
+}
+
+/**
+ * The cards the player who made the last move could legally swap it for, so the
+ * client can highlight them. Empty unless a take-back is available.
+ */
+export function replaceOptions(state: GameState): Card[] {
+  if (state.phase !== "playing" || state.trump === null) return [];
+  const cards = tableTrick(state);
+  const top = cards[cards.length - 1];
+  if (!top) return [];
+  const undone = undo(state, top.seat);
+  if (!undone.ok) return [];
+  return legalMoves(
+    undone.state.hands[top.seat],
+    undone.state.currentTrick,
+    state.trump,
+    top.seat,
+  );
 }

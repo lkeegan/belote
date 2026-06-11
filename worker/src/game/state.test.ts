@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { type Card, type Suit, SUITS, makeRng } from "./deck";
 import { type Seat, legalMoves, nextSeat } from "./rules";
-import { type GameState, createGame, reduce } from "./state";
+import { type GameState, createGame, reduce, replaceOptions } from "./state";
 
 const handSizes = (s: GameState) => s.hands.map((h) => h.length);
 
@@ -335,6 +335,82 @@ describe("reduce — undo", () => {
     // The eighth trick's last card was forced, so there is nothing to take back.
     const back = reduce(finished, { type: "undo", seat: fourthSeat });
     expect(back).toEqual({ ok: false, error: "not in playing phase" });
+  });
+});
+
+describe("reduce — replace", () => {
+  // Spades led by seat 0, followed by seat 1; seat 1 still holds another spade.
+  const craft = (): GameState => ({
+    ...deal(0),
+    phase: "playing",
+    trump: "hearts" as Suit,
+    taker: 0,
+    turn: 2,
+    hands: [
+      [],
+      [
+        { suit: "spades", rank: "Q" },
+        { suit: "hearts", rank: "7" },
+      ],
+      [],
+      [],
+    ] as Card[][],
+    currentTrick: [
+      { seat: 0, card: { suit: "spades", rank: "A" } },
+      { seat: 1, card: { suit: "spades", rank: "K" } },
+    ],
+  });
+
+  it("swaps the topmost played card for another legal one", () => {
+    const r = reduce(craft(), {
+      type: "replace",
+      seat: 1,
+      card: { suit: "spades", rank: "Q" },
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.state.currentTrick).toHaveLength(2);
+    expect(r.state.currentTrick[1]).toEqual({
+      seat: 1,
+      card: { suit: "spades", rank: "Q" },
+    });
+    expect(r.state.turn).toBe(2);
+    expect(r.state.hands[1]).toContainEqual({ suit: "spades", rank: "K" });
+    expect(r.state.hands[1]).not.toContainEqual({ suit: "spades", rank: "Q" });
+  });
+
+  it("rejects swapping to an illegal card (must still follow suit)", () => {
+    const r = reduce(craft(), {
+      type: "replace",
+      seat: 1,
+      card: { suit: "hearts", rank: "7" }, // a spade is on hand, must follow
+    });
+    expect(r).toEqual({ ok: false, error: "illegal move" });
+  });
+
+  it("rejects a swap by a seat that does not own the topmost card", () => {
+    const r = reduce(craft(), {
+      type: "replace",
+      seat: 0,
+      card: { suit: "spades", rank: "A" },
+    });
+    expect(r).toEqual({
+      ok: false,
+      error: "only the last card played can be taken back",
+    });
+  });
+
+  it("replaceOptions lists the legal swaps for the top card's owner", () => {
+    const opts = replaceOptions(craft());
+    // Seat 1 followed spades, so both spades are legal and the heart is not. The
+    // played card itself is included; the UI omits it as it sits on the table.
+    expect(opts).toContainEqual({ suit: "spades", rank: "Q" });
+    expect(opts).toContainEqual({ suit: "spades", rank: "K" });
+    expect(opts).not.toContainEqual({ suit: "hearts", rank: "7" });
+  });
+
+  it("replaceOptions is empty when no card has been played", () => {
+    expect(replaceOptions({ ...craft(), currentTrick: [] })).toEqual([]);
   });
 });
 

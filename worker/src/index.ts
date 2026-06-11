@@ -6,10 +6,14 @@ import {
   type GameState,
   type ReduceResult,
   reduce,
+  replaceOptions,
 } from "./game/state";
 
-/** State as sent to clients: the game plus the current turn's legal cards. */
-type ClientState = GameState & { legal: Card[] };
+/**
+ * State as sent to clients: the game, the current turn's legal cards, and the
+ * cards the last player may swap their move for (when a take-back is available).
+ */
+type ClientState = GameState & { legal: Card[]; replaceLegal: Card[] };
 
 /**
  * Attach the cards the current turn may legally play, derived from the rules
@@ -20,7 +24,7 @@ function toClientState(state: GameState): ClientState {
     state.phase === "playing" && state.trump
       ? legalMoves(state.hands[state.turn], state.currentTrick, state.trump, state.turn)
       : [];
-  return { ...state, legal };
+  return { ...state, legal, replaceLegal: replaceOptions(state) };
 }
 
 // There is one global Belote game, so every request goes to a single named
@@ -189,22 +193,28 @@ function parseAction(
       return { action: { type: "undo", seat } };
     }
     case "/play": {
-      const seat = asSeat(b.seat);
-      if (seat === null) return { error: "seat must be 0–3" };
-      const card = b.card as { suit?: unknown; rank?: unknown } | undefined;
-      if (!card || typeof card.suit !== "string" || typeof card.rank !== "string")
-        return { error: "card must have a suit and rank" };
-      return {
-        action: {
-          type: "play",
-          seat,
-          card: { suit: card.suit as never, rank: card.rank as never },
-        },
-      };
+      const p = parseSeatCard(b);
+      return "error" in p ? p : { action: { type: "play", ...p } };
+    }
+    case "/replace": {
+      const p = parseSeatCard(b);
+      return "error" in p ? p : { action: { type: "replace", ...p } };
     }
     default:
       return { error: "not found" };
   }
+}
+
+/** Parse a body carrying a seat and a card, shared by /play and /replace. */
+function parseSeatCard(
+  b: Record<string, unknown>,
+): { seat: 0 | 1 | 2 | 3; card: Card } | { error: string } {
+  const seat = asSeat(b.seat);
+  if (seat === null) return { error: "seat must be 0–3" };
+  const card = b.card as { suit?: unknown; rank?: unknown } | undefined;
+  if (!card || typeof card.suit !== "string" || typeof card.rank !== "string")
+    return { error: "card must have a suit and rank" };
+  return { seat, card: { suit: card.suit as never, rank: card.rank as never } };
 }
 
 export default {
