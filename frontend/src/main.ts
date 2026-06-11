@@ -245,6 +245,7 @@ const scoreboard = document.querySelector<HTMLElement>("#scoreboard")!;
 const clearBtn = document.querySelector<HTMLButtonElement>("#clear-scores")!;
 const changeSeat = document.querySelector<HTMLButtonElement>("#change-seat")!;
 const statusEl = document.querySelector<HTMLElement>("#status")!;
+const titleEl = document.querySelector<HTMLElement>("#title")!;
 const workerMsg = document.querySelector<HTMLElement>("#worker-msg")!;
 
 /**
@@ -458,8 +459,14 @@ function renderChangeSeat(): void {
   changeSeat.hidden = mySeat === null;
 }
 
+function renderTitle(): void {
+  titleEl.textContent =
+    mySeat === null ? "Belote" : `Belote :: ${PLAYERS[mySeat]}`;
+}
+
 function render(): void {
   renderStatus();
+  renderTitle();
   renderScoreboard(state);
   renderChangeSeat();
   renderHeaderStatus(mySeat === null ? null : state);
