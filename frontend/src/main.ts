@@ -201,32 +201,17 @@ function send(path: string, body: unknown): void {
   }
 }
 
-// This device plays for a single seat, chosen up front and remembered. Only
-// that seat's hand is shown; the others stay covered.
-const SEAT_KEY = "belote.seat";
-
-function loadSeat(): Seat | null {
-  try {
-    const n = Number(localStorage.getItem(SEAT_KEY));
-    return n === 0 || n === 1 || n === 2 || n === 3 ? (n as Seat) : null;
-  } catch {
-    return null;
-  }
-}
-
+// This tab plays for a single seat, chosen up front. The choice is held only
+// in memory, so it must be made afresh whenever the page is opened or
+// refreshed — letting several tabs each play a different seat. Only the chosen
+// seat's hand is shown; the others stay covered.
 function setMySeat(seat: Seat | null): void {
   mySeat = seat;
-  try {
-    if (seat === null) localStorage.removeItem(SEAT_KEY);
-    else localStorage.setItem(SEAT_KEY, String(seat));
-  } catch {
-    /* storage unavailable — the choice simply won't persist */
-  }
   render();
 }
 
 let state: GameState | null = null;
-let mySeat: Seat | null = loadSeat();
+let mySeat: Seat | null = null;
 let offline = false;
 // Played-card keys shown last render, so only freshly played cards animate in
 // (render rebuilds the DOM on every poll).
