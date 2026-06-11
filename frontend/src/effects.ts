@@ -1,17 +1,15 @@
-// Weather and celebration effects shown over the round-summary box: confetti
-// when the contract is made, rain when it falls (dedans), and a full storm —
-// rain, lightning and thunder — on a capot. All are purely decorative, draw
-// over everything with pointer-events disabled, and run until cleared (when the
-// next hand is dealt).
+// Celebration effects shown over the round-summary box: confetti when the
+// contract is made, rain when it falls (dedans), and a nuclear explosion on a
+// capot. All are purely decorative, draw over everything with pointer-events
+// disabled, and run until cleared (when the next hand is dealt).
 
 import confetti from "canvas-confetti";
 
-// The single effect overlay (rain/lightning live here; confetti draws on its
+// The single effect overlay (rain/explosion live here; confetti draws on its
 // own canvas), plus the handles needed to tear the running effect down.
 let overlay: HTMLElement | null = null;
 let confettiInterval = 0;
-let strikeTimer = 0;
-let audioCtx: AudioContext | null = null;
+let loopTimer = 0;
 
 /** Stop and remove any running effect, leaving a clean slate for the next one. */
 export function clearEffect(): void {
@@ -19,9 +17,9 @@ export function clearEffect(): void {
     clearInterval(confettiInterval);
     confettiInterval = 0;
   }
-  if (strikeTimer) {
-    clearTimeout(strikeTimer);
-    strikeTimer = 0;
+  if (loopTimer) {
+    clearTimeout(loopTimer);
+    loopTimer = 0;
   }
   confetti.reset();
   overlay?.remove();
@@ -31,12 +29,12 @@ export function clearEffect(): void {
 /** Play the effect that fits a finished hand's outcome. */
 export function playResultEffect(result: { madeContract: boolean; capot: boolean }): void {
   clearEffect();
-  if (result.capot) storm();
+  if (result.capot) nuke();
   else if (result.madeContract) confettiFall();
   else rain();
 }
 
-/** A full-screen, click-through layer to mount drops and flashes into. */
+/** A full-screen, click-through layer to mount drops and the explosion into. */
 function makeOverlay(kind: string): HTMLElement {
   const el = document.createElement("div");
   el.className = `fx fx-${kind}`;
@@ -44,18 +42,24 @@ function makeOverlay(kind: string): HTMLElement {
   return el;
 }
 
-// Confetti streaming down from the top edge for a few seconds.
+/** Fade the current overlay out after `ms`, so the effect settles like the
+ *  confetti does rather than running forever. */
+function fadeOverlayAfter(ms: number): void {
+  loopTimer = window.setTimeout(() => overlay?.classList.add("fx-fade"), ms);
+}
+
+// A heavy fall of confetti streaming down from the top edge.
 function confettiFall(): void {
   const colors = ["#f5c542", "#7ac8ff", "#ff5e7e", "#5ee08a", "#ffffff"];
-  const stopAt = Date.now() + 4000;
+  const stopAt = Date.now() + 4500;
   confettiInterval = window.setInterval(() => {
     confetti({
-      particleCount: 5,
+      particleCount: 14,
       startVelocity: 0,
-      ticks: 320,
-      gravity: 0.6,
-      spread: 140,
-      scalar: 0.95,
+      ticks: 360,
+      gravity: 2.4,
+      spread: 170,
+      scalar: 1,
       origin: { x: Math.random(), y: -0.1 },
       colors,
       disableForReducedMotion: true,
@@ -64,10 +68,10 @@ function confettiFall(): void {
       clearInterval(confettiInterval);
       confettiInterval = 0;
     }
-  }, 180);
+  }, 110);
 }
 
-// A field of falling raindrops. Returns the overlay so the storm can build on it.
+// A field of falling raindrops that fades out after a few seconds.
 function rain(count = 150): HTMLElement {
   overlay = makeOverlay("rain");
   for (let i = 0; i < count; i++) {
@@ -78,56 +82,27 @@ function rain(count = 150): HTMLElement {
     drop.style.animationDuration = `${0.5 + Math.random() * 0.45}s`;
     overlay.appendChild(drop);
   }
+  fadeOverlayAfter(4000);
   return overlay;
 }
 
-// Rain plus periodic lightning flashes and thunder.
-function storm(): void {
-  const el = rain(200);
-  el.classList.add("fx-storm");
-
-  const flash = document.createElement("div");
-  flash.className = "lightning";
-  el.appendChild(flash);
-
-  const strike = (): void => {
-    // Restart the flash animation from the top (re-adding the class won't
-    // replay it without forcing a reflow first).
-    flash.classList.remove("flash");
-    void flash.offsetWidth;
-    flash.classList.add("flash");
-    thunder();
-    strikeTimer = window.setTimeout(strike, 1600 + Math.random() * 2600);
-  };
-  strike();
-}
-
-// A synthesised thunder clap: a burst of low-passed noise that decays away. Kept
-// asset-free; best-effort, since the browser may block audio without a gesture.
-function thunder(): void {
-  try {
-    audioCtx ??= new AudioContext();
-    const ctx = audioCtx;
-    if (ctx.state === "suspended") void ctx.resume();
-
-    const duration = 1.3;
-    const buffer = ctx.createBuffer(1, Math.floor(ctx.sampleRate * duration), ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < data.length; i++) {
-      const t = i / data.length;
-      data[i] = (Math.random() * 2 - 1) * (1 - t) ** 2; // decaying noise
-    }
-
-    const src = ctx.createBufferSource();
-    src.buffer = buffer;
-    const lowpass = ctx.createBiquadFilter();
-    lowpass.type = "lowpass";
-    lowpass.frequency.value = 380;
-    const gain = ctx.createGain();
-    gain.gain.value = 0.55;
-    src.connect(lowpass).connect(gain).connect(ctx.destination);
-    src.start();
-  } catch {
-    // No audio available — the visuals carry the effect on their own.
-  }
+// A single nuclear explosion: a blinding flash, an expanding ground shockwave,
+// a rising stem and a billowing mushroom cap built from overlapping blobs.
+function nuke(): void {
+  overlay = makeOverlay("nuke");
+  overlay.innerHTML = `
+    <div class="nuke-flash"></div>
+    <div class="nuke-shock"></div>
+    <div class="nuke-column">
+      <div class="nuke-stem"></div>
+      <div class="nuke-head">
+        <span class="billow smoke b-top1"></span>
+        <span class="billow smoke b-top2"></span>
+        <span class="billow b-left"></span>
+        <span class="billow b-right"></span>
+        <span class="billow b-mid"></span>
+        <span class="billow b-core"></span>
+      </div>
+    </div>`;
+  fadeOverlayAfter(750);
 }
