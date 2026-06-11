@@ -393,6 +393,18 @@ body {
   cursor: not-allowed;
 }
 
+/* Cards you can queue as a pre-move (before your turn): clickable, and the one
+   chosen wears a gold ring with a slight lift to set it apart from a legal
+   (green) play. */
+.card.premoveable {
+  cursor: pointer;
+}
+.card.premoved {
+  outline: 3px solid #f5c542;
+  transform: translateY(-8px);
+  transition: transform 0.1s ease;
+}
+
 .card.back {
   background: repeating-linear-gradient(
     45deg,
@@ -534,6 +546,22 @@ body {
   border-top: 1px solid rgba(255, 255, 255, 0.2);
   font-weight: 800;
   font-size: 1.1rem;
+}
+
+.result-next {
+  margin-top: 1rem;
+  font-size: 1rem;
+  padding: 0.5rem 1.3rem;
+  border: none;
+  border-radius: 999px;
+  background: #f5c542;
+  color: #14502c;
+  font-weight: 700;
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+.result-next:hover {
+  filter: brightness(1.07);
 }
 
 /* A played card, full size, tucked into the quadrant corner nearest the table

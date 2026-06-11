@@ -57,6 +57,10 @@ interface CardOptions {
   trump?: boolean;
   playable?: boolean;
   illegal?: boolean;
+  /** Click to queue this card as a pre-move (before it's your turn). */
+  premoveable?: boolean;
+  /** This card is the currently queued pre-move. */
+  premoved?: boolean;
   onPlay?: () => void;
   /** Click to take the card back (the topmost card of the current trick). */
   onUndo?: () => void;
@@ -70,6 +74,8 @@ function renderCard(card: Card, opts: CardOptions = {}): HTMLElement {
     opts.trump ? "trump" : "",
     opts.playable ? "playable" : "",
     opts.illegal ? "illegal" : "",
+    opts.premoveable ? "premoveable" : "",
+    opts.premoved ? "premoved" : "",
     opts.onUndo ? "takeback" : "",
   ]
     .filter(Boolean)
@@ -85,7 +91,7 @@ function renderCard(card: Card, opts: CardOptions = {}): HTMLElement {
     "aria-label",
     `${RANK_NAME[card.rank]} de ${SUIT_NAME[card.suit]}`,
   );
-  if (opts.playable && opts.onPlay) {
+  if ((opts.playable || opts.premoveable) && opts.onPlay) {
     el.addEventListener("click", (event) => {
       event.stopPropagation(); // don't toggle the quadrant's reveal
       opts.onPlay!();
@@ -198,6 +204,7 @@ function connect(): void {
     }
     state = data as GameState;
     offline = false;
+    syncPremove(); // play a queued pre-move if it's now this seat's turn
     render();
   });
 
@@ -228,12 +235,16 @@ function send(path: string, body: unknown): void {
 // seat's hand is shown; the others stay covered.
 function setMySeat(seat: Seat | null): void {
   mySeat = seat;
+  premove = null; // a queued pre-move belongs to the seat that set it
   render();
 }
 
 let state: GameState | null = null;
 let mySeat: Seat | null = null;
 let offline = false;
+// A card queued to play as soon as it's this seat's turn (a pre-move). Cleared
+// once played, or if it stops being a legal/held card by the time the turn comes.
+let premove: Card | null = null;
 // Played-card keys shown last render, so only freshly played cards animate in
 // (render rebuilds the DOM on every poll).
 let lastPlayed = new Set<string>();
@@ -254,6 +265,36 @@ const bid = (seat: Seat, suit: Suit | null) => send("/bid", { seat, suit });
 const play = (seat: Seat, card: Card) => send("/play", { seat, card });
 const undo = (seat: Seat) => send("/undo", { seat });
 const replace = (seat: Seat, card: Card) => send("/replace", { seat, card });
+
+/** Queue (or, if already queued, cancel) a card as a pre-move. */
+function togglePremove(card: Card): void {
+  premove = premove && cardKey(premove) === cardKey(card) ? null : card;
+  render();
+}
+
+/**
+ * Reconcile the queued pre-move against fresh state: drop it if it's no longer
+ * a held card (a new hand, or it was taken back), and — once it's this seat's
+ * turn — play it if still legal, otherwise drop it so the seat can choose.
+ */
+function syncPremove(): void {
+  if (premove === null) return;
+  if (mySeat === null || !state || state.phase !== "playing") {
+    premove = null;
+    return;
+  }
+  const held = state.hands[mySeat].some((c) => cardKey(c) === cardKey(premove!));
+  if (!held) {
+    premove = null;
+    return;
+  }
+  if (state.turn === mySeat) {
+    const card = premove;
+    const legal = state.legal.some((c) => cardKey(c) === cardKey(card));
+    premove = null;
+    if (legal) play(mySeat, card);
+  }
+}
 
 /** Reset the cumulative scores (kept across games on the worker). */
 function clearScores(): void {
@@ -346,18 +387,29 @@ function renderQuadrant(seat: Seat, s: GameState): HTMLElement {
   // replacements for the card already on the table.
   const legalKeys = new Set((isTurn ? s.legal : s.replaceLegal).map(cardKey));
 
+  // When it's not your turn (and there's no card to swap), you may queue a
+  // pre-move: pick a card now and it plays automatically once your turn comes.
+  const canPremove = mine && s.phase === "playing" && !interactive;
+
   if (mine) {
     const cards = document.createElement("div");
     cards.className = "cards";
     for (const card of sortHand(s.hands[seat])) {
       const playable = interactive && legalKeys.has(cardKey(card));
       const illegal = interactive && !legalKeys.has(cardKey(card));
+      const premoved = canPremove && premove !== null && cardKey(premove) === cardKey(card);
       cards.appendChild(
         renderCard(card, {
           trump: card.suit === s.trump,
           playable,
           illegal,
-          onPlay: () => void (isTurn ? play(seat, card) : replace(seat, card)),
+          premoveable: canPremove,
+          premoved,
+          onPlay: () => {
+            if (isTurn) play(seat, card);
+            else if (canSwap) replace(seat, card);
+            else togglePremove(card);
+          },
         }),
       );
     }
@@ -494,6 +546,16 @@ function renderResultBox(s: GameState): HTMLElement {
       <span class="total">${s.scores[1]}</span>
     </div>
   `;
+
+  // A "Nouvelle donne" button at the bottom both deals the next hand and, in
+  // doing so, dismisses the box.
+  const next = document.createElement("button");
+  next.type = "button";
+  next.className = "result-next";
+  next.textContent = "Nouvelle donne";
+  next.addEventListener("click", () => newGame());
+  box.appendChild(next);
+
   return box;
 }
 
