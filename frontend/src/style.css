@@ -8,7 +8,7 @@
      smaller of width/height (a quadrant is bounded by both) and cap at the
      original desktop dimensions. Everything inside a card is derived from this
      via container queries (see .card), so the whole UI tracks one number. */
-  --card-w: clamp(42px, min(8.5vw, 13vh), 112px);
+  --card-w: clamp(42px, min(8.5vw, 10.5vh), 112px);
   --card-h: calc(var(--card-w) * 10 / 7);
 }
 
@@ -190,11 +190,12 @@ body {
 }
 
 .bid {
-  /* Scale with viewport height (the quadrant below the hand is height-bound)
-     so the buttons stay big on a laptop but shrink to fit under the cards on
-     an iPad or phone instead of being clipped. */
-  font-size: clamp(0.85rem, 3.5vh, 1.9rem);
-  padding: clamp(0.3rem, 1.2vh, 0.8rem) clamp(0.7rem, 2.6vh, 1.8rem);
+  /* Scale off the card width, the same number the cards track, so the buttons
+     stay in proportion with the hand on every device — small on a phone, large
+     on a laptop — and fit under the two card rows without overflowing the
+     quadrant. */
+  font-size: calc(var(--card-w) * 0.3);
+  padding: calc(var(--card-w) * 0.12) calc(var(--card-w) * 0.26);
   border: none;
   border-radius: 999px;
   font-weight: 700;
@@ -213,7 +214,7 @@ body {
   color: #14502c;
 }
 .bid.take-suit .suit {
-  font-size: clamp(1.1rem, 4vh, 2.2rem);
+  font-size: calc(var(--card-w) * 0.38);
 }
 .bid.take-suit.red .suit {
   color: #d4163c;
