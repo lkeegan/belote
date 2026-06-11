@@ -161,12 +161,14 @@ describe("scoreHand — invariants on a full 32-card hand", () => {
     );
   };
 
-  it("splits exactly 162 points between the teams (no capot, no belote)", () => {
+  it("splits exactly 162 card points between the teams (no capot, no belote)", () => {
     // Team 0 takes the first four tricks, team 1 the last four.
     const r = scoreHand(fullTricks([0, 0, 0, 0, 1, 1, 1, 1]), TRUMP, 0);
     expect(r.capot).toBe(false);
     expect(r.beloteTeam).toBe(null);
-    expect(r.handPoints[0] + r.handPoints[1]).toBe(162);
+    // In deck order each seat holds four-of-a-kinds, so annonces are awarded on
+    // top; the card points underneath still conserve to 162.
+    expect(r.handPoints[0] + r.handPoints[1] - r.annoncePoints).toBe(162);
   });
 
   it("dix de der lands on the last trick's winner", () => {
@@ -187,5 +189,115 @@ describe("scoreHand — invariants on a full 32-card hand", () => {
     const r = scoreHand(lowPoint, TRUMP, 1); // taker team 1 wins the last trick
     expect(r.madeContract).toBe(true);
     expect(r.handPoints).toEqual([0, 10]); // only the dix de der scores
+  });
+});
+
+describe("scoreHand — annonces", () => {
+  // Annonce detection only depends on which cards each seat played, so we build
+  // eight tricks straight from four eight-card hands (winner is irrelevant).
+  const fromHands = (hands: [Card[], Card[], Card[], Card[]]): CompletedTrick[] =>
+    Array.from({ length: 8 }, (_, t) =>
+      trick(
+        0,
+        [0, 1, 2, 3].map((s): [Seat, Card] => [s as Seat, hands[s as Seat][t]]),
+      ),
+    );
+
+  it("gives the higher annonce's team all of theirs (carré beats tierce)", () => {
+    const r = scoreHand(
+      fromHands([
+        // team 0: a carré of jacks (200)
+        [c("J", "hearts"), c("J", "diamonds"), c("J", "clubs"), c("J", "spades"),
+         c("7", "hearts"), c("9", "diamonds"), c("K", "clubs"), c("8", "spades")],
+        // team 1: a tierce A-K-Q of spades (20)
+        [c("A", "spades"), c("K", "spades"), c("Q", "spades"),
+         c("7", "hearts"), c("9", "hearts"), c("7", "diamonds"),
+         c("10", "diamonds"), c("8", "clubs")],
+        // team 0 partner: no annonce
+        [c("7", "clubs"), c("9", "clubs"), c("7", "spades"), c("9", "spades"),
+         c("8", "hearts"), c("10", "hearts"), c("8", "diamonds"), c("10", "diamonds")],
+        // team 1 partner: no annonce
+        [c("Q", "hearts"), c("K", "hearts"), c("Q", "diamonds"), c("K", "diamonds"),
+         c("Q", "clubs"), c("K", "clubs"), c("8", "spades"), c("10", "spades")],
+      ]),
+      TRUMP,
+      0,
+    );
+    expect(r.annonceTeam).toBe(0);
+    expect(r.annoncePoints).toBe(200);
+    expect(r.annonces).toEqual([
+      { team: 0, kind: "carre", rank: "J", points: 200 },
+    ]);
+  });
+
+  it("sums every annonce of the winning team", () => {
+    const r = scoreHand(
+      fromHands([
+        // team 0: a carré of nines (150) — the highest annonce overall
+        [c("9", "hearts"), c("9", "diamonds"), c("9", "clubs"), c("9", "spades"),
+         c("7", "hearts"), c("J", "diamonds"), c("K", "clubs"), c("A", "spades")],
+        // team 1: a cinquante 7-8-9-10 of clubs (50)
+        [c("7", "clubs"), c("8", "clubs"), c("9", "clubs"), c("10", "clubs"),
+         c("A", "hearts"), c("7", "diamonds"), c("Q", "spades"), c("K", "diamonds")],
+        // team 0 partner: a tierce 7-8-9 of spades (20)
+        [c("7", "spades"), c("8", "spades"), c("9", "spades"),
+         c("J", "hearts"), c("K", "hearts"), c("7", "diamonds"),
+         c("10", "diamonds"), c("Q", "clubs")],
+        // team 1 partner: no annonce
+        [c("Q", "hearts"), c("A", "hearts"), c("Q", "diamonds"), c("A", "diamonds"),
+         c("8", "clubs"), c("J", "clubs"), c("8", "spades"), c("10", "spades")],
+      ]),
+      TRUMP,
+      0,
+    );
+    expect(r.annonceTeam).toBe(0);
+    expect(r.annoncePoints).toBe(170); // carré 150 + tierce 20
+    expect(r.annonces).toHaveLength(2);
+  });
+
+  it("cancels two equal sequences when neither is trump", () => {
+    const r = scoreHand(
+      fromHands([
+        // team 0: a J-high tierce in clubs
+        [c("9", "clubs"), c("10", "clubs"), c("J", "clubs"),
+         c("7", "hearts"), c("8", "diamonds"), c("Q", "spades"),
+         c("A", "spades"), c("7", "spades")],
+        // team 1: a J-high tierce in diamonds — same length and top card
+        [c("9", "diamonds"), c("10", "diamonds"), c("J", "diamonds"),
+         c("8", "hearts"), c("7", "clubs"), c("Q", "spades"),
+         c("A", "spades"), c("7", "spades")],
+        [c("7", "clubs"), c("9", "clubs"), c("7", "spades"), c("9", "spades"),
+         c("8", "hearts"), c("10", "hearts"), c("8", "diamonds"), c("10", "diamonds")],
+        [c("Q", "hearts"), c("K", "hearts"), c("Q", "diamonds"), c("K", "diamonds"),
+         c("Q", "clubs"), c("K", "clubs"), c("8", "spades"), c("10", "spades")],
+      ]),
+      TRUMP,
+      0,
+    );
+    expect(r.annonceTeam).toBe(null);
+    expect(r.annoncePoints).toBe(0);
+  });
+
+  it("breaks an otherwise-equal tie in favour of the trump sequence", () => {
+    const r = scoreHand(
+      fromHands([
+        // team 0: a J-high tierce in clubs (not trump)
+        [c("9", "clubs"), c("10", "clubs"), c("J", "clubs"),
+         c("7", "hearts"), c("8", "diamonds"), c("Q", "spades"),
+         c("A", "spades"), c("7", "spades")],
+        // team 1: a J-high tierce in hearts (trump) — wins the tie
+        [c("9", "hearts"), c("10", "hearts"), c("J", "hearts"),
+         c("8", "clubs"), c("7", "clubs"), c("Q", "spades"),
+         c("A", "spades"), c("7", "spades")],
+        [c("7", "clubs"), c("9", "clubs"), c("7", "spades"), c("9", "spades"),
+         c("8", "hearts"), c("10", "hearts"), c("8", "diamonds"), c("10", "diamonds")],
+        [c("Q", "hearts"), c("K", "hearts"), c("Q", "diamonds"), c("K", "diamonds"),
+         c("Q", "clubs"), c("K", "clubs"), c("8", "spades"), c("10", "spades")],
+      ]),
+      TRUMP, // hearts
+      0,
+    );
+    expect(r.annonceTeam).toBe(1);
+    expect(r.annoncePoints).toBe(20);
   });
 });

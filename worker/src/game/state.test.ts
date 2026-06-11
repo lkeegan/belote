@@ -451,12 +451,11 @@ describe("reduce — a full hand", () => {
     expect(final.result).toBeDefined();
 
     // Cumulative scores equal this hand's points, which total 162 (no capot)
-    // plus any belote bonus.
+    // plus any belote bonus and any annonces awarded on top.
     const total = final.scores[0] + final.scores[1];
     const belote = final.result!.beloteTeam === null ? 0 : 20;
-    expect(final.result!.capot ? total : total - belote).toBe(
-      final.result!.capot ? 252 + belote : 162,
-    );
+    const bonus = belote + final.result!.annoncePoints;
+    expect(total - bonus).toBe(final.result!.capot ? 252 : 162);
     expect(final.scores).toEqual(final.result!.handPoints);
   });
 

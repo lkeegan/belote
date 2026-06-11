@@ -1,12 +1,25 @@
-// End-of-hand Belote scoring: card points, dix de der, belote-rebelote, the
-// made/dedans contract decision, and capot.
+// End-of-hand Belote scoring: card points, dix de der, belote-rebelote,
+// annonces (sequences and carrés), the made/dedans contract decision, and capot.
 
-import { type Card, type Suit } from "./deck";
+import { type Card, type Rank, type Suit, RANKS, SUITS } from "./deck";
 import { type Seat, type TrickPlay, cardPoints, teamOf } from "./rules";
 
 export interface CompletedTrick {
   winner: Seat;
   cards: TrickPlay[];
+}
+
+/** A declaration (annonce): a run of cards or a four-of-a-kind in one hand. */
+export type AnnonceKind = "tierce" | "cinquante" | "cent" | "carre";
+
+export interface Annonce {
+  team: 0 | 1;
+  kind: AnnonceKind;
+  /** Top card of a sequence, or the shared rank of a carré. */
+  rank: Rank;
+  /** Suit of a sequence; omitted for a carré (it spans all four suits). */
+  suit?: Suit;
+  points: number;
 }
 
 export interface HandResult {
@@ -18,6 +31,12 @@ export interface HandResult {
   capot: boolean;
   /** Team awarded belote-rebelote (+20), or null if no one held K+Q of trump. */
   beloteTeam: 0 | 1 | null;
+  /** Team awarded the annonces, or null if there were none (or a top-tie). */
+  annonceTeam: 0 | 1 | null;
+  /** Total annonce points awarded to annonceTeam (0 if none). */
+  annoncePoints: number;
+  /** The winning team's annonces, for display. */
+  annonces: Annonce[];
 }
 
 // 152 card points + 10 for the last trick (dix de der) = 162 per hand.
@@ -25,6 +44,136 @@ const TOTAL_POINTS = 162;
 const DIX_DE_DER = 10;
 const BELOTE_BONUS = 20;
 const CAPOT_POINTS = 252;
+
+// Carré (four of a kind) values; 7s and 8s don't count, so they're absent.
+const CARRE_POINTS: Partial<Record<Rank, number>> = {
+  J: 200,
+  "9": 150,
+  A: 100,
+  K: 100,
+  Q: 100,
+  "10": 100,
+};
+
+/** Sequence value by length: tierce 20, cinquante 50, cent (5+) 100. */
+function sequencePoints(length: number): number {
+  if (length >= 5) return 100;
+  if (length === 4) return 50;
+  if (length === 3) return 20;
+  return 0;
+}
+
+/**
+ * Every annonce in one hand: carrés (four of a counting rank) and the maximal
+ * runs of three or more consecutive cards within a single suit. Sequences rank
+ * in natural order (7-8-9-10-J-Q-K-A), independent of which suit is trump.
+ */
+function handAnnonces(hand: Card[], seat: Seat, trump: Suit): Annonce[] {
+  const team = teamOf(seat);
+  const found: Annonce[] = [];
+
+  // Carrés: a counting rank held four times.
+  const counts = new Map<Rank, number>();
+  for (const card of hand) counts.set(card.rank, (counts.get(card.rank) ?? 0) + 1);
+  for (const [rank, count] of counts) {
+    const points = CARRE_POINTS[rank];
+    if (count === 4 && points) found.push({ team, kind: "carre", rank, points });
+  }
+
+  // Sequences: split each suit's ranks into maximal consecutive runs.
+  for (const suit of SUITS) {
+    const idx = hand
+      .filter((c) => c.suit === suit)
+      .map((c) => RANKS.indexOf(c.rank))
+      .sort((a, b) => a - b);
+    let start = 0;
+    for (let i = 1; i <= idx.length; i++) {
+      if (i === idx.length || idx[i] !== idx[i - 1] + 1) {
+        const length = i - start;
+        if (length >= 3) {
+          found.push({
+            team,
+            kind: length >= 5 ? "cent" : length === 4 ? "cinquante" : "tierce",
+            rank: RANKS[idx[i - 1]],
+            suit,
+            points: sequencePoints(length),
+          });
+        }
+        start = i;
+      }
+    }
+  }
+
+  return found;
+}
+
+/**
+ * A comparable strength for ranking annonces against each other. Carrés always
+ * outrank sequences (the smallest counting carré, of tens, is 100 — equal to
+ * the best sequence, a cent). Among carrés the order is J > 9 > A > K > Q > 10;
+ * among sequences the longer wins, then the higher top card, then trump breaks
+ * a tie between two otherwise-identical runs.
+ */
+function strength(a: Annonce, trump: Suit): [number, number] {
+  if (a.kind === "carre") return [2, a.points * 10 + RANKS.indexOf(a.rank)];
+  const length = a.kind === "cent" ? 5 : a.kind === "cinquante" ? 4 : 3;
+  const trumpBreak = a.suit === trump ? 1 : 0;
+  return [1, length * 1000 + RANKS.indexOf(a.rank) * 2 + trumpBreak];
+}
+
+/** Compare two annonces: positive if `a` is the stronger. */
+function compareAnnonce(a: Annonce, b: Annonce, trump: Suit): number {
+  const sa = strength(a, trump);
+  const sb = strength(b, trump);
+  return sa[0] - sb[0] || sa[1] - sb[1];
+}
+
+function bestAnnonce(all: Annonce[], team: 0 | 1, trump: Suit): Annonce | null {
+  let best: Annonce | null = null;
+  for (const a of all) {
+    if (a.team === team && (!best || compareAnnonce(a, best, trump) > 0)) best = a;
+  }
+  return best;
+}
+
+/**
+ * Award the annonces. Each team's hands are reconstructed from the cards they
+ * played across the tricks, all declarations are detected, and the team holding
+ * the single highest one scores *all* of theirs — the other team scores none.
+ * If the two top annonces are exactly equal (same kind and height, neither at
+ * trump) they cancel and nobody scores.
+ */
+function awardAnnonces(
+  tricks: CompletedTrick[],
+  trump: Suit,
+): { team: 0 | 1 | null; points: number; annonces: Annonce[] } {
+  const hands: Card[][] = [[], [], [], []];
+  for (const trick of tricks) {
+    for (const { seat, card } of trick.cards) hands[seat].push(card);
+  }
+
+  const all: Annonce[] = [];
+  for (let seat = 0; seat < 4; seat++) {
+    all.push(...handAnnonces(hands[seat], seat as Seat, trump));
+  }
+
+  const best0 = bestAnnonce(all, 0, trump);
+  const best1 = bestAnnonce(all, 1, trump);
+
+  let team: 0 | 1 | null;
+  if (!best0 && !best1) return { team: null, points: 0, annonces: [] };
+  else if (!best1) team = 0;
+  else if (!best0) team = 1;
+  else {
+    const cmp = compareAnnonce(best0, best1, trump);
+    team = cmp > 0 ? 0 : cmp < 0 ? 1 : null; // an exact top-tie cancels both
+  }
+  if (team === null) return { team: null, points: 0, annonces: [] };
+
+  const annonces = all.filter((a) => a.team === team);
+  const points = annonces.reduce((sum, a) => sum + a.points, 0);
+  return { team, points, annonces };
+}
 
 /**
  * The team awarded belote-rebelote: the one whose single player held both the
@@ -96,5 +245,18 @@ export function scoreHand(
   // Belote-rebelote is added on top and always counts.
   if (beloteTeam !== null) handPoints[beloteTeam] += BELOTE_BONUS;
 
-  return { handPoints, madeContract, capot: capotTeam !== null, beloteTeam };
+  // Annonces are added on top too, to whichever team declared the highest one.
+  // Like belote, they don't enter the contract/capot decision above.
+  const annonce = awardAnnonces(tricks, trump);
+  if (annonce.team !== null) handPoints[annonce.team] += annonce.points;
+
+  return {
+    handPoints,
+    madeContract,
+    capot: capotTeam !== null,
+    beloteTeam,
+    annonceTeam: annonce.team,
+    annoncePoints: annonce.points,
+    annonces: annonce.annonces,
+  };
 }

@@ -126,11 +126,22 @@ interface TrickPlay {
   seat: Seat;
   card: Card;
 }
+type AnnonceKind = "tierce" | "cinquante" | "cent" | "carre";
+interface Annonce {
+  team: 0 | 1;
+  kind: AnnonceKind;
+  rank: Rank;
+  suit?: Suit;
+  points: number;
+}
 interface HandResult {
   handPoints: [number, number];
   madeContract: boolean;
   capot: boolean;
   beloteTeam: 0 | 1 | null;
+  annonceTeam: 0 | 1 | null;
+  annoncePoints: number;
+  annonces: Annonce[];
 }
 interface GameState {
   phase: Phase;
@@ -452,6 +463,28 @@ function suitHtml(suit: Suit): string {
   return `<span class="suit ${isRed(suit) ? "red" : "black"}">${SUIT_SYMBOL[suit]}</span>`;
 }
 
+const TEAM_NAME = ["Séb·Liam", "Maya·Dadmor"];
+const ANNONCE_NAME: Record<AnnonceKind, string> = {
+  tierce: "Tierce",
+  cinquante: "Cinquante",
+  cent: "Cent",
+  carre: "Carré",
+};
+
+/** One annonce as text: "Carré de V" or "Tierce à R ♠". */
+function annonceHtml(a: Annonce): string {
+  if (a.kind === "carre") return `Carré de ${RANK_LABEL[a.rank]}`;
+  const suit = a.suit ? ` ${suitHtml(a.suit)}` : "";
+  return `${ANNONCE_NAME[a.kind]} à ${RANK_LABEL[a.rank]}${suit}`;
+}
+
+/** The annonces clause for the finished-hand line, or "" if there were none. */
+function annoncesHtml(r: HandResult): string {
+  if (r.annonceTeam === null || r.annonces.length === 0) return "";
+  const list = r.annonces.map(annonceHtml).join(", ");
+  return ` · ${TEAM_NAME[r.annonceTeam]} : ${list} (${r.annoncePoints})`;
+}
+
 /** Phase-appropriate status text, shown in the title bar. */
 function renderHeaderStatus(s: GameState | null): void {
   if (!s) {
@@ -471,7 +504,7 @@ function renderHeaderStatus(s: GameState | null): void {
         ? "Contrat réussi"
         : "Chute (dedans)";
     const belote = r.beloteTeam !== null ? " · Belote" : "";
-    statusEl.innerHTML = `${head} · preneur ${PLAYERS[s.taker!]} · ${r.handPoints[0]}–${r.handPoints[1]}${belote}`;
+    statusEl.innerHTML = `${head} · preneur ${PLAYERS[s.taker!]} · ${r.handPoints[0]}–${r.handPoints[1]}${belote}${annoncesHtml(r)}`;
   } else {
     statusEl.innerHTML = "";
   }
