@@ -25,6 +25,8 @@ export interface Annonce {
 export interface HandResult {
   /** Points added to each team this hand, [team {0,2}, team {1,3}]. */
   handPoints: [number, number];
+  /** Raw card points each team captured in tricks, before dix de der. */
+  cardPoints: [number, number];
   /** Whether the taker's team fulfilled the contract. */
   madeContract: boolean;
   /** Whether one team swept all eight tricks. */
@@ -217,6 +219,8 @@ export function scoreHand(
     const team = teamOf(trick.winner);
     for (const { card } of trick.cards) cardPts[team] += cardPoints(card, trump);
   }
+  // The card points captured before the 10-point dix de der is added on.
+  const handCardPoints: [number, number] = [cardPts[0], cardPts[1]];
   cardPts[teamOf(tricks[tricks.length - 1].winner)] += DIX_DE_DER;
 
   // Bonus points (belote-rebelote and annonces) by team. They always count for
@@ -257,6 +261,7 @@ export function scoreHand(
 
   return {
     handPoints,
+    cardPoints: handCardPoints,
     madeContract,
     capot: capotTeam !== null,
     beloteTeam,
