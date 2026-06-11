@@ -278,6 +278,36 @@ describe("scoreHand — annonces", () => {
     expect(r.annoncePoints).toBe(0);
   });
 
+  it("counts toward the contract: an annonce can rescue a dedans", () => {
+    // On cards alone the taker (team 0) trails 17–25 and would go dedans, but
+    // their tierce A-K-Q of spades (20) tips the total to 37–25.
+    const tricks = [
+      trick(1, [
+        [0, c("A", "spades")], // 11
+        [1, c("9", "hearts")], // 14 (trump) -> team 1: 25
+        [2, c("7", "clubs")],
+        [3, c("8", "clubs")],
+      ]),
+      trick(0, [
+        [0, c("K", "spades")], // 4 -> team 0
+        [1, c("7", "diamonds")],
+        [2, c("8", "diamonds")],
+        [3, c("9", "diamonds")],
+      ]),
+      trick(0, [
+        [0, c("Q", "spades")], // 3 + 10 dix de der -> team 0: 17
+        [1, c("7", "hearts")],
+        [2, c("8", "hearts")],
+        [3, c("7", "spades")],
+      ]),
+    ];
+    const r = scoreHand(tricks, TRUMP, 0);
+    expect(r.annonceTeam).toBe(0);
+    expect(r.annoncePoints).toBe(20);
+    expect(r.madeContract).toBe(true);
+    expect(r.handPoints).toEqual([37, 25]);
+  });
+
   it("breaks an otherwise-equal tie in favour of the trump sequence", () => {
     const r = scoreHand(
       fromHands([

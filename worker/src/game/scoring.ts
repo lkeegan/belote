@@ -197,8 +197,9 @@ function beloteTeamFor(tricks: CompletedTrick[], trump: Suit): 0 | 1 | null {
 
 /**
  * Score a completed hand (all eight tricks played). `taker` took the contract
- * at `trump`. Returns the points each team scores, including belote-rebelote,
- * which always counts even when its team goes dedans or a capot is scored.
+ * at `trump`. Returns the points each team scores, including belote-rebelote
+ * and annonces, both of which always count for their holder even on a dedans
+ * or capot — and both of which count toward the contract decision below.
  */
 export function scoreHand(
   tricks: CompletedTrick[],
@@ -208,6 +209,7 @@ export function scoreHand(
   const takerTeam = teamOf(taker);
   const defenders = (1 - takerTeam) as 0 | 1;
   const beloteTeam = beloteTeamFor(tricks, trump);
+  const annonce = awardAnnonces(tricks, trump);
 
   // Raw card points per team, with dix de der to the last trick's winner.
   const cardPts: [number, number] = [0, 0];
@@ -216,6 +218,13 @@ export function scoreHand(
     for (const { card } of trick.cards) cardPts[team] += cardPoints(card, trump);
   }
   cardPts[teamOf(tricks[tricks.length - 1].winner)] += DIX_DE_DER;
+
+  // Bonus points (belote-rebelote and annonces) by team. They always count for
+  // their holder, and — per the belote rule — toward the contract decision: the
+  // taker must out-total the defenders across cards *and* bonuses to make it.
+  const bonus: [number, number] = [0, 0];
+  if (beloteTeam !== null) bonus[beloteTeam] += BELOTE_BONUS;
+  if (annonce.team !== null) bonus[annonce.team] += annonce.points;
 
   // Capot: one team won every trick.
   const winners = tricks.map((t) => teamOf(t.winner));
@@ -231,24 +240,20 @@ export function scoreHand(
   if (capotTeam !== null) {
     handPoints[capotTeam] = CAPOT_POINTS;
     madeContract = capotTeam === takerTeam;
-  } else if (cardPts[takerTeam] > cardPts[defenders]) {
+  } else if (cardPts[takerTeam] + bonus[takerTeam] > cardPts[defenders] + bonus[defenders]) {
     // Contract made: each team keeps its own card points.
     handPoints[takerTeam] = cardPts[takerTeam];
     handPoints[defenders] = cardPts[defenders];
     madeContract = true;
   } else {
-    // Dedans (including an 81–81 tie): defenders take everything.
+    // Dedans (including a points tie): defenders take all the card points.
     handPoints[defenders] = TOTAL_POINTS;
     madeContract = false;
   }
 
-  // Belote-rebelote is added on top and always counts.
-  if (beloteTeam !== null) handPoints[beloteTeam] += BELOTE_BONUS;
-
-  // Annonces are added on top too, to whichever team declared the highest one.
-  // Like belote, they don't enter the contract/capot decision above.
-  const annonce = awardAnnonces(tricks, trump);
-  if (annonce.team !== null) handPoints[annonce.team] += annonce.points;
+  // Bonuses are added on top, always counting for their holder.
+  handPoints[0] += bonus[0];
+  handPoints[1] += bonus[1];
 
   return {
     handPoints,
