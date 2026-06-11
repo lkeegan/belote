@@ -21,7 +21,13 @@ import {
   sameCard,
   trickWinner,
 } from "./rules";
-import { type CompletedTrick, type HandResult, scoreHand } from "./scoring";
+import {
+  type Annonce,
+  type CompletedTrick,
+  type HandResult,
+  handAnnonces,
+  scoreHand,
+} from "./scoring";
 
 export type Phase = "bidding" | "playing" | "finished";
 
@@ -46,6 +52,8 @@ export interface GameState {
   passes: number;
   currentTrick: TrickPlay[];
   tricks: CompletedTrick[];
+  /** Annonces players have revealed this hand, shown to the whole table. */
+  shownAnnonces: { seat: Seat; annonces: Annonce[] }[];
   /** Cumulative points, [team {0,2}, team {1,3}]. */
   scores: [number, number];
   /** Set once the hand is finished. */
@@ -61,6 +69,8 @@ export type Action =
   | { type: "undo"; seat: Seat }
   // Swap the last played card for another (take back, then play in its place).
   | { type: "replace"; seat: Seat; card: Card }
+  // Reveal a seat's annonces to the table (allowed on the second trick).
+  | { type: "showAnnonces"; seat: Seat }
   | { type: "clear" };
 
 export type ReduceResult =
@@ -85,6 +95,7 @@ export function createGame(opener: Seat, rng: Rng = Math.random): GameState {
     passes: 0,
     currentTrick: [],
     tricks: [],
+    shownAnnonces: [],
     scores: [0, 0],
   };
 }
@@ -127,6 +138,8 @@ export function reduce(
       return undo(state, action.seat);
     case "replace":
       return replace(state, action.seat, action.card);
+    case "showAnnonces":
+      return showAnnonces(state, action.seat);
     case "clear":
       return { ok: true, state: { ...state, scores: [0, 0] } };
   }
@@ -305,6 +318,32 @@ function replace(state: GameState, seat: Seat, card: Card): ReduceResult {
   const undone = undo(state, seat);
   if (!undone.ok) return undone;
   return play(undone.state, seat, card);
+}
+
+/**
+ * Reveal a seat's annonces to the whole table. The rules let opponents ask to
+ * see declarations on the second trick, so that is the only window: once per
+ * seat, and only when the hand actually holds one. The combinations are read
+ * from the cards still held and snapshotted into the state, so they keep showing
+ * for the rest of the hand even as those cards are played out.
+ */
+function showAnnonces(state: GameState, seat: Seat): ReduceResult {
+  if (state.phase !== "playing") return err("not in playing phase");
+  if (state.trump === null) return err("no trump set");
+  if (!isSeat(seat)) return err("invalid seat");
+  if (state.tricks.length !== 1)
+    return err("annonces are shown on the second trick");
+  if (state.shownAnnonces.some((a) => a.seat === seat))
+    return err("annonces already shown");
+  const annonces = handAnnonces(state.hands[seat], seat, state.trump);
+  if (annonces.length === 0) return err("no annonces to show");
+  return {
+    ok: true,
+    state: {
+      ...state,
+      shownAnnonces: [...state.shownAnnonces, { seat, annonces }],
+    },
+  };
 }
 
 /**
