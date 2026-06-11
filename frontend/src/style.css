@@ -503,7 +503,6 @@ body {
 .played.takeback {
   pointer-events: auto;
   cursor: pointer;
-  outline: 3px dashed #f5c542;
   transition: transform 0.1s ease;
 }
 .played.takeback:hover {

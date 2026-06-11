@@ -147,6 +147,8 @@ interface GameState {
   scores: [number, number];
   result?: HandResult;
   legal: Card[];
+  /** Cards the last player may swap their played card for (empty if none). */
+  replaceLegal: Card[];
 }
 
 // Base URL of the Cloudflare Worker. Defaults to the local `wrangler dev`
@@ -240,6 +242,7 @@ function newGame(): void {
 const bid = (seat: Seat, suit: Suit | null) => send("/bid", { seat, suit });
 const play = (seat: Seat, card: Card) => send("/play", { seat, card });
 const undo = (seat: Seat) => send("/undo", { seat });
+const replace = (seat: Seat, card: Card) => send("/replace", { seat, card });
 
 /** Reset the cumulative scores (kept across games on the worker). */
 function clearScores(): void {
@@ -321,20 +324,29 @@ function renderQuadrant(seat: Seat, s: GameState): HTMLElement {
   area.className = "hand-area";
 
   const isTurn = s.phase === "playing" && s.turn === seat;
-  const legalKeys = new Set(s.legal.map(cardKey));
+  // You own the topmost card on the table while no one has covered it, so it can
+  // still be taken back. When it is not your turn, clicking another legal card
+  // then swaps your played card for it.
+  const top = topPlay(s);
+  const iOwnTop = mine && s.phase === "playing" && top?.seat === seat;
+  const canSwap = iOwnTop && !isTurn;
+  const interactive = isTurn || canSwap;
+  // Your turn highlights the legal plays; a pending swap highlights the legal
+  // replacements for the card already on the table.
+  const legalKeys = new Set((isTurn ? s.legal : s.replaceLegal).map(cardKey));
 
   if (mine) {
     const cards = document.createElement("div");
     cards.className = "cards";
     for (const card of sortHand(s.hands[seat])) {
-      const playable = isTurn && legalKeys.has(cardKey(card));
-      const illegal = isTurn && !legalKeys.has(cardKey(card));
+      const playable = interactive && legalKeys.has(cardKey(card));
+      const illegal = interactive && !legalKeys.has(cardKey(card));
       cards.appendChild(
         renderCard(card, {
           trump: card.suit === s.trump,
           playable,
           illegal,
-          onPlay: () => void play(seat, card),
+          onPlay: () => void (isTurn ? play(seat, card) : replace(seat, card)),
         }),
       );
     }
@@ -353,17 +365,13 @@ function renderQuadrant(seat: Seat, s: GameState): HTMLElement {
   // what.
   const played = shownTrick(s).find((p) => p.seat === seat)?.card;
   if (played) {
-    // Your own card may be taken back while it is still the topmost card on the
-    // table — no one has played over it yet. This covers a trick's fourth card
-    // too, which lingers until the winner leads the next trick. The final card
-    // of the hand is excluded (the game is finished, not playing): it was forced
-    // anyway, so there is nothing to take back.
-    const top = topPlay(s);
-    const canUndo =
-      mine && s.phase === "playing" && top !== undefined && top.seat === seat;
+    // Clicking your own card takes the move back entirely while it is still on
+    // top — no one has covered it. (Covers a trick's fourth card too, which
+    // lingers until the winner leads; the hand's forced final card is excluded
+    // because the game is then finished, not playing.)
     const pc = renderCard(played, {
       trump: played.suit === s.trump,
-      onUndo: canUndo ? () => void undo(seat) : undefined,
+      onUndo: iOwnTop ? () => void undo(seat) : undefined,
     });
     pc.classList.add("played");
     // Animate only when this card is newly played (not on every poll redraw).
