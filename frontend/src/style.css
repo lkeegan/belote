@@ -705,7 +705,7 @@ body {
   }
 }
 
-/* --- Result effects: rain and lightning over the summary box -------------- */
+/* --- Result effects: rain and the capot explosion over the summary box ---- */
 /* A full-screen, click-through layer; confetti draws on its own canvas. */
 .fx {
   position: fixed;
@@ -713,6 +713,12 @@ body {
   z-index: 50;
   pointer-events: none;
   overflow: hidden;
+  transition: opacity 0.85s ease;
+}
+
+/* Effects settle by fading the whole layer out (see fadeOverlayAfter). */
+.fx.fx-fade {
+  opacity: 0;
 }
 
 .raindrop {
@@ -734,31 +740,161 @@ body {
   }
 }
 
-/* The storm's lightning: a white wash over the whole screen that flashes and
-   fades on each strike. */
-.lightning {
+/* The capot nuclear explosion: a blinding flash, an expanding ground shockwave,
+   a rising stem and a billowing mushroom cap built from overlapping blobs. */
+.nuke-flash {
   position: absolute;
   inset: 0;
-  background: #eaf2ff;
+  background: radial-gradient(
+    circle at 50% 78%,
+    #ffffff 0%,
+    #fff0bf 28%,
+    rgba(255, 150, 40, 0) 72%
+  );
   opacity: 0;
+  animation: nuke-flash 1.6s ease-out forwards;
 }
 
-.lightning.flash {
-  animation: lightning-flash 0.7s ease-out;
-}
-
-@keyframes lightning-flash {
+@keyframes nuke-flash {
   0% { opacity: 0; }
-  6% { opacity: 0.85; }
-  12% { opacity: 0.1; }
-  18% { opacity: 0.7; }
-  30% { opacity: 0; }
+  3% { opacity: 1; }
+  22% { opacity: 0.45; }
   100% { opacity: 0; }
+}
+
+/* The blast ring racing out along the ground (a flattened, expanding ellipse). */
+.nuke-shock {
+  position: absolute;
+  left: 50%;
+  bottom: 7%;
+  width: 22vmin;
+  height: 6vmin;
+  margin-left: -11vmin;
+  border-radius: 50%;
+  border: 0.6vmin solid rgba(255, 228, 160, 0.85);
+  opacity: 0;
+  animation: nuke-shock 1.3s ease-out forwards;
+}
+
+@keyframes nuke-shock {
+  0% { transform: scale(0.1); opacity: 0; }
+  10% { opacity: 0.9; }
+  100% { transform: scale(14); opacity: 0; }
+}
+
+/* The whole cloud rises from the detonation point and grows as it climbs. */
+.nuke-column {
+  position: absolute;
+  left: 50%;
+  bottom: 7%;
+  width: 50vmin;
+  height: 70vmin;
+  transform: translateX(-50%);
+  transform-origin: 50% 100%;
+  animation: nuke-rise 1.6s cubic-bezier(0.12, 0.7, 0.3, 1) forwards;
+}
+
+@keyframes nuke-rise {
+  0% { opacity: 0; transform: translateX(-50%) translateY(34%) scale(0.18); }
+  10% { opacity: 1; }
+  100% { opacity: 1; transform: translateX(-50%) translateY(-8%) scale(3); }
+}
+
+/* The rising column, hot at the top where it meets the cap. */
+.nuke-stem {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 22%;
+  height: 76%;
+  margin-left: -11%;
+  border-radius: 36% 36% 14% 14%;
+  background: linear-gradient(
+    to top,
+    rgba(120, 78, 46, 0) 0%,
+    rgba(168, 102, 56, 0.85) 24%,
+    rgba(232, 138, 60, 0.95) 64%,
+    rgba(255, 198, 96, 0.98) 100%
+  );
+  filter: blur(4px);
+}
+
+/* The cap overhangs the stem; its blobs are blurred together into one cloud. */
+.nuke-head {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 132%;
+  height: 46%;
+  margin-left: -66%;
+  filter: blur(4px);
+}
+
+.billow {
+  position: absolute;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 50% 62%,
+    #fff3c8 0%,
+    #ffc25a 32%,
+    #e87528 58%,
+    #a23c1d 78%,
+    rgba(70, 32, 20, 0) 94%
+  );
+}
+
+/* Cooler smoke billows rolling over the top of the cap. */
+.billow.smoke {
+  background: radial-gradient(
+    circle at 50% 58%,
+    #8a6552 0%,
+    #5e4538 52%,
+    rgba(45, 33, 27, 0) 86%
+  );
+}
+
+.b-core {
+  left: 30%;
+  bottom: 0;
+  width: 40%;
+  height: 74%;
+}
+.b-mid {
+  left: 26%;
+  top: 4%;
+  width: 48%;
+  height: 86%;
+}
+.b-left {
+  left: 0;
+  bottom: 6%;
+  width: 40%;
+  height: 64%;
+}
+.b-right {
+  right: 0;
+  bottom: 6%;
+  width: 40%;
+  height: 64%;
+}
+.b-top1 {
+  left: 16%;
+  top: 0;
+  width: 36%;
+  height: 54%;
+}
+.b-top2 {
+  left: 48%;
+  top: 2%;
+  width: 36%;
+  height: 54%;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .raindrop,
-  .lightning.flash {
+  .nuke-flash,
+  .nuke-shock,
+  .nuke-column {
     animation: none;
   }
 }
