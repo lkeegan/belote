@@ -490,8 +490,10 @@ function renderChangeSeat(): void {
 }
 
 function renderTitle(): void {
-  titleEl.textContent =
-    mySeat === null ? "Belote" : `Belote :: ${PLAYERS[mySeat]}`;
+  const title = mySeat === null ? "Belote" : `Belote :: ${PLAYERS[mySeat]}`;
+  titleEl.textContent = title;
+  // Mirror it in the document title so the browser tab names the seat too.
+  document.title = title;
 }
 
 function render(): void {
