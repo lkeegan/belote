@@ -533,12 +533,6 @@ body {
   font-weight: 700;
 }
 
-/* The trump symbol spans both team columns. */
-.result-grid .atout {
-  grid-column: 2 / 4;
-  font-size: 1.3rem;
-}
-
 /* The running totals, set off from the per-hand points above. */
 .result-grid .total {
   margin-top: 0.3rem;
