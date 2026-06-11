@@ -458,6 +458,45 @@ function renderRetourne(s: GameState): HTMLElement {
   return card;
 }
 
+/**
+ * The round-summary box, shown in the middle of the table once the hand is
+ * finished: a result heading, the points each team made this hand, the trump,
+ * and the running totals at the bottom.
+ */
+function renderResultBox(s: GameState): HTMLElement {
+  const r = s.result!;
+  const heading = r.capot
+    ? "Capot !"
+    : r.madeContract
+      ? "Contrat réussi"
+      : "Dedans";
+  const atout = s.trump ? suitHtml(s.trump) : "—";
+
+  const box = document.createElement("div");
+  box.className = "result-box";
+  box.innerHTML = `
+    <div class="result-heading">${heading}</div>
+    <div class="result-sub">preneur ${PLAYERS[s.taker!]}</div>
+    <div class="result-grid">
+      <span></span>
+      <span class="gold">${TEAM_NAME[0]}</span>
+      <span class="blue">${TEAM_NAME[1]}</span>
+
+      <span class="rlabel">Points faits</span>
+      <span>${r.handPoints[0]}</span>
+      <span>${r.handPoints[1]}</span>
+
+      <span class="rlabel">Atout</span>
+      <span class="atout">${atout}</span>
+
+      <span class="rlabel total">Total</span>
+      <span class="total">${s.scores[0]}</span>
+      <span class="total">${s.scores[1]}</span>
+    </div>
+  `;
+  return box;
+}
+
 /** A coloured suit symbol for the title-bar status line. */
 function suitHtml(suit: Suit): string {
   return `<span class="suit ${isRed(suit) ? "red" : "black"}">${SUIT_SYMBOL[suit]}</span>`;
@@ -569,6 +608,9 @@ function render(): void {
   // The turned-up card sits in the middle only while bidding; once play starts
   // the centre is left clear and played cards appear in each quadrant's corner.
   if (state.phase === "bidding") table.appendChild(renderRetourne(state));
+  // Once the hand is over, the centre shows the round-summary box instead.
+  if (state.phase === "finished" && state.result)
+    table.appendChild(renderResultBox(state));
 
   // Remember which cards are on the table so they don't re-animate next redraw.
   lastPlayed = new Set(shownTrick(state).map((p) => cardKey(p.card)));

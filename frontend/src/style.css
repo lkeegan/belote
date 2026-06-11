@@ -470,6 +470,72 @@ body {
   z-index: 3;
 }
 
+/* Round summary, centred on the table once the hand finishes. */
+.result-box {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 5;
+  min-width: 15rem;
+  padding: 1rem 1.4rem 1.1rem;
+  text-align: center;
+  background: rgba(0, 0, 0, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 14px;
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.55);
+}
+
+.result-heading {
+  font-size: 1.5rem;
+  font-weight: 800;
+}
+
+.result-sub {
+  margin-top: 0.1rem;
+  margin-bottom: 0.8rem;
+  font-size: 0.9rem;
+  opacity: 0.8;
+}
+
+.result-grid {
+  display: grid;
+  grid-template-columns: auto 1fr 1fr;
+  gap: 0.4rem 1.2rem;
+  align-items: baseline;
+}
+
+.result-grid .rlabel {
+  text-align: left;
+  font-size: 0.9rem;
+  opacity: 0.85;
+}
+
+.result-grid .gold {
+  color: #f5c542;
+  font-weight: 700;
+}
+
+.result-grid .blue {
+  color: #7ac8ff;
+  font-weight: 700;
+}
+
+/* The trump symbol spans both team columns. */
+.result-grid .atout {
+  grid-column: 2 / 4;
+  font-size: 1.3rem;
+}
+
+/* The running totals, set off from the per-hand points above. */
+.result-grid .total {
+  margin-top: 0.3rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+  font-weight: 800;
+  font-size: 1.1rem;
+}
+
 /* A played card, full size, tucked into the quadrant corner nearest the table
    centre so it's obvious who played it. --fx/--fy point back toward the hand
    (the quadrant's outer corner), so a freshly played card slides in from there. */
