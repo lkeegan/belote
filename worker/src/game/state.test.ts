@@ -222,6 +222,122 @@ describe("reduce — play validation", () => {
   });
 });
 
+describe("reduce — undo", () => {
+  // Spades led by seat 0, then seat 1 followed: seat 1's card is on top.
+  const craftTwoCardTrick = (): GameState => ({
+    ...deal(0),
+    phase: "playing",
+    trump: "hearts" as Suit,
+    taker: 0,
+    turn: 2,
+    hands: [[], [{ suit: "hearts", rank: "7" }], [], []] as Card[][],
+    currentTrick: [
+      { seat: 0, card: { suit: "spades", rank: "A" } },
+      { seat: 1, card: { suit: "spades", rank: "K" } },
+    ],
+  });
+
+  it("takes back the topmost card, returning it and rewinding the turn", () => {
+    const r = reduce(craftTwoCardTrick(), { type: "undo", seat: 1 });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.state.currentTrick).toHaveLength(1);
+    expect(r.state.turn).toBe(1);
+    expect(r.state.hands[1]).toContainEqual({ suit: "spades", rank: "K" });
+  });
+
+  it("rejects taking back a card that is no longer on top", () => {
+    const r = reduce(craftTwoCardTrick(), { type: "undo", seat: 0 });
+    expect(r).toEqual({
+      ok: false,
+      error: "only the last card played can be taken back",
+    });
+  });
+
+  it("rejects undo when the trick is empty", () => {
+    const s: GameState = { ...craftTwoCardTrick(), currentTrick: [] };
+    const r = reduce(s, { type: "undo", seat: 0 });
+    expect(r).toEqual({ ok: false, error: "no card to take back" });
+  });
+
+  it("a play followed by its undo restores the trick, turn and hand", () => {
+    const start = takeGame("undo-seed");
+    const seat = start.turn;
+    const legal = legalMoves(start.hands[seat], start.currentTrick, start.trump!, seat);
+    const played = reduce(start, { type: "play", seat, card: legal[0] });
+    if (!played.ok) throw new Error(played.error);
+    const back = reduce(played.state, { type: "undo", seat });
+    expect(back.ok).toBe(true);
+    if (!back.ok) return;
+    expect(back.state.currentTrick).toEqual(start.currentTrick);
+    expect(back.state.turn).toBe(seat);
+    // The card returns to the hand (order is not significant — the UI sorts).
+    const key = (c: Card) => `${c.suit}-${c.rank}`;
+    const sorted = (h: Card[]) => h.map(key).sort();
+    expect(sorted(back.state.hands[seat])).toEqual(sorted(start.hands[seat]));
+  });
+
+  // Spades led and followed by seats 0–2; seat 3 holds the last card.
+  const craftThreeCardTrick = (): GameState => ({
+    ...deal(0),
+    phase: "playing",
+    trump: "hearts" as Suit,
+    taker: 0,
+    turn: 3,
+    hands: [[], [], [], [{ suit: "spades", rank: "7" }]] as Card[][],
+    currentTrick: [
+      { seat: 0, card: { suit: "spades", rank: "A" } },
+      { seat: 1, card: { suit: "spades", rank: "K" } },
+      { seat: 2, card: { suit: "spades", rank: "Q" } },
+    ],
+  });
+
+  it("takes back a trick's fourth card while it still sits on the table", () => {
+    const played = reduce(craftThreeCardTrick(), {
+      type: "play",
+      seat: 3,
+      card: { suit: "spades", rank: "7" },
+    });
+    if (!played.ok) throw new Error(played.error);
+    // The trick has resolved: nothing in progress, one completed trick.
+    expect(played.state.currentTrick).toHaveLength(0);
+    expect(played.state.tricks).toHaveLength(1);
+
+    const back = reduce(played.state, { type: "undo", seat: 3 });
+    expect(back.ok).toBe(true);
+    if (!back.ok) return;
+    expect(back.state.currentTrick).toHaveLength(3);
+    expect(back.state.tricks).toHaveLength(0);
+    expect(back.state.turn).toBe(3);
+    expect(back.state.hands[3]).toContainEqual({ suit: "spades", rank: "7" });
+  });
+
+  it("only the fourth seat may take a completed trick back", () => {
+    const played = reduce(craftThreeCardTrick(), {
+      type: "play",
+      seat: 3,
+      card: { suit: "spades", rank: "7" },
+    });
+    if (!played.ok) throw new Error(played.error);
+    const back = reduce(played.state, { type: "undo", seat: 0 });
+    expect(back).toEqual({
+      ok: false,
+      error: "only the last card played can be taken back",
+    });
+  });
+
+  it("does not undo the final card once the hand is finished", () => {
+    const finished = playToFinish(takeGame("77"));
+    expect(finished.phase).toBe("finished");
+    const lastTrick = finished.tricks[finished.tricks.length - 1];
+    const fourthSeat = lastTrick.cards[lastTrick.cards.length - 1].seat;
+
+    // The eighth trick's last card was forced, so there is nothing to take back.
+    const back = reduce(finished, { type: "undo", seat: fourthSeat });
+    expect(back).toEqual({ ok: false, error: "not in playing phase" });
+  });
+});
+
 /** Deal (seeded) and have the opener take the retourne suit (enter playing). */
 function takeGame(seed: string, opener: Seat = 0): GameState {
   const g = createGame(opener, makeRng(seed));

@@ -183,6 +183,11 @@ function parseAction(
     }
     case "/clear":
       return { action: { type: "clear" } };
+    case "/undo": {
+      const seat = asSeat(b.seat);
+      if (seat === null) return { error: "seat must be 0–3" };
+      return { action: { type: "undo", seat } };
+    }
     case "/play": {
       const seat = asSeat(b.seat);
       if (seat === null) return { error: "seat must be 0–3" };

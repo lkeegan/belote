@@ -58,6 +58,8 @@ interface CardOptions {
   playable?: boolean;
   illegal?: boolean;
   onPlay?: () => void;
+  /** Click to take the card back (the topmost card of the current trick). */
+  onUndo?: () => void;
 }
 
 function renderCard(card: Card, opts: CardOptions = {}): HTMLElement {
@@ -68,6 +70,7 @@ function renderCard(card: Card, opts: CardOptions = {}): HTMLElement {
     opts.trump ? "trump" : "",
     opts.playable ? "playable" : "",
     opts.illegal ? "illegal" : "",
+    opts.onUndo ? "takeback" : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -86,6 +89,11 @@ function renderCard(card: Card, opts: CardOptions = {}): HTMLElement {
     el.addEventListener("click", (event) => {
       event.stopPropagation(); // don't toggle the quadrant's reveal
       opts.onPlay!();
+    });
+  } else if (opts.onUndo) {
+    el.addEventListener("click", (event) => {
+      event.stopPropagation();
+      opts.onUndo!();
     });
   }
   return el;
@@ -231,6 +239,7 @@ function newGame(): void {
 // A bid: pass (suit null) or take at a suit.
 const bid = (seat: Seat, suit: Suit | null) => send("/bid", { seat, suit });
 const play = (seat: Seat, card: Card) => send("/play", { seat, card });
+const undo = (seat: Seat) => send("/undo", { seat });
 
 /** Reset the cumulative scores (kept across games on the worker). */
 function clearScores(): void {
@@ -258,6 +267,16 @@ function shownTrick(s: GameState): TrickPlay[] {
   if (s.phase !== "bidding" && s.tricks.length > 0)
     return s.tricks[s.tricks.length - 1].cards;
   return [];
+}
+
+/**
+ * The last card played that is still on top of the table — the one a player may
+ * take back. It's the final card of the trick on show, whether that trick is in
+ * progress or has just completed and not yet been led away from.
+ */
+function topPlay(s: GameState): TrickPlay | undefined {
+  const trick = shownTrick(s);
+  return trick[trick.length - 1];
 }
 
 function renderQuadrant(seat: Seat, s: GameState): HTMLElement {
@@ -334,7 +353,18 @@ function renderQuadrant(seat: Seat, s: GameState): HTMLElement {
   // what.
   const played = shownTrick(s).find((p) => p.seat === seat)?.card;
   if (played) {
-    const pc = renderCard(played, { trump: played.suit === s.trump });
+    // Your own card may be taken back while it is still the topmost card on the
+    // table — no one has played over it yet. This covers a trick's fourth card
+    // too, which lingers until the winner leads the next trick. The final card
+    // of the hand is excluded (the game is finished, not playing): it was forced
+    // anyway, so there is nothing to take back.
+    const top = topPlay(s);
+    const canUndo =
+      mine && s.phase === "playing" && top !== undefined && top.seat === seat;
+    const pc = renderCard(played, {
+      trump: played.suit === s.trump,
+      onUndo: canUndo ? () => void undo(seat) : undefined,
+    });
     pc.classList.add("played");
     // Animate only when this card is newly played (not on every poll redraw).
     if (!lastPlayed.has(cardKey(played))) pc.classList.add("deal-in");

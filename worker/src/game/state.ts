@@ -57,6 +57,8 @@ export type Action =
   // A bid: `suit === null` passes; otherwise the seat takes at that suit.
   | { type: "bid"; seat: Seat; suit: Suit | null }
   | { type: "play"; seat: Seat; card: Card }
+  // Take back the last card played to the current trick (only its player may).
+  | { type: "undo"; seat: Seat }
   | { type: "clear" };
 
 export type ReduceResult =
@@ -119,6 +121,8 @@ export function reduce(
       return bid(state, action.seat, action.suit, rng);
     case "play":
       return play(state, action.seat, action.card);
+    case "undo":
+      return undo(state, action.seat);
     case "clear":
       return { ok: true, state: { ...state, scores: [0, 0] } };
   }
@@ -238,6 +242,49 @@ function play(state: GameState, seat: Seat, card: Card): ReduceResult {
       turn: winner,
       scores,
       result,
+    },
+  };
+}
+
+/**
+ * Take back the most recently played card. Only the seat that played it may,
+ * and only while it is still the topmost card on the table — once the next card
+ * is played over it the move is locked in. The card returns to that seat's hand
+ * and the turn rewinds to them.
+ *
+ * The fourth card of a trick counts too: a completed trick lingers on the table
+ * until the winner leads, so until then its last card can still be taken back,
+ * un-resolving the trick to three cards in progress. The exception is the eighth
+ * trick, which finishes the hand: its last card was the player's only legal one,
+ * so there is nothing to reconsider, and `phase !== "playing"` rules it out.
+ */
+function undo(state: GameState, seat: Seat): ReduceResult {
+  if (state.phase !== "playing") return err("not in playing phase");
+  if (!isSeat(seat)) return err("invalid seat");
+
+  // The cards on the table: the trick in progress, or — when none is — the one
+  // that just completed and still shows until the winner leads.
+  const inProgress = state.currentTrick.length > 0;
+  const cards = inProgress
+    ? state.currentTrick
+    : (state.tricks[state.tricks.length - 1]?.cards ?? []);
+
+  const top = cards[cards.length - 1];
+  if (!top) return err("no card to take back");
+  if (top.seat !== seat)
+    return err("only the last card played can be taken back");
+
+  // Return the card to its hand and rewind the turn. A completed trick is
+  // un-resolved back to three cards in progress (and dropped from `tricks`).
+  const hands = state.hands.map((h, s) => (s === seat ? [...h, top.card] : h));
+  return {
+    ok: true,
+    state: {
+      ...state,
+      hands,
+      currentTrick: cards.slice(0, -1),
+      tricks: inProgress ? state.tricks : state.tricks.slice(0, -1),
+      turn: seat,
     },
   };
 }
