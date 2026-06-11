@@ -70,7 +70,7 @@ function sequencePoints(length: number): number {
  * runs of three or more consecutive cards within a single suit. Sequences rank
  * in natural order (7-8-9-10-J-Q-K-A), independent of which suit is trump.
  */
-function handAnnonces(hand: Card[], seat: Seat, trump: Suit): Annonce[] {
+export function handAnnonces(hand: Card[], seat: Seat, trump: Suit): Annonce[] {
   const team = teamOf(seat);
   const found: Annonce[] = [];
 

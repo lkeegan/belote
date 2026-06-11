@@ -162,6 +162,8 @@ interface GameState {
   passes: number;
   currentTrick: TrickPlay[];
   tricks: { winner: Seat; cards: TrickPlay[] }[];
+  /** Annonces players have revealed this hand, shown to the whole table. */
+  shownAnnonces: { seat: Seat; annonces: Annonce[] }[];
   scores: [number, number];
   result?: HandResult;
   legal: Card[];
@@ -206,6 +208,7 @@ function connect(): void {
     state = data as GameState;
     offline = false;
     syncPremove(); // play a queued pre-move if it's now this seat's turn
+    syncSummary(); // hold the summary box back briefly after the last card
     render();
   });
 
@@ -249,6 +252,40 @@ let premove: Card | null = null;
 // Played-card keys shown last render, so only freshly played cards animate in
 // (render rebuilds the DOM on every poll).
 let lastPlayed = new Set<string>();
+// The summary box waits a moment after the last card so the final trick stays
+// on the table before the cards vanish and the box appears. `summaryRevealed`
+// flips true once that pause elapses; the timer guards against arming twice.
+const SUMMARY_DELAY_MS = 3000;
+let summaryRevealed = false;
+let summaryTimer: number | null = null;
+
+/** Whether the round-summary box (and the hidden final trick) is now showing. */
+function summaryShown(): boolean {
+  return state?.phase === "finished" && summaryRevealed;
+}
+
+/**
+ * Arm or reset the post-hand pause. On reaching "finished" the box is held back
+ * for SUMMARY_DELAY_MS; any earlier phase clears the flag and pending timer so
+ * the next hand starts clean.
+ */
+function syncSummary(): void {
+  if (state?.phase === "finished") {
+    if (!summaryRevealed && summaryTimer === null) {
+      summaryTimer = window.setTimeout(() => {
+        summaryTimer = null;
+        summaryRevealed = true;
+        render();
+      }, SUMMARY_DELAY_MS);
+    }
+  } else {
+    summaryRevealed = false;
+    if (summaryTimer !== null) {
+      clearTimeout(summaryTimer);
+      summaryTimer = null;
+    }
+  }
+}
 
 // --- Actions ----------------------------------------------------------------
 
@@ -266,6 +303,8 @@ const bid = (seat: Seat, suit: Suit | null) => send("/bid", { seat, suit });
 const play = (seat: Seat, card: Card) => send("/play", { seat, card });
 const undo = (seat: Seat) => send("/undo", { seat });
 const replace = (seat: Seat, card: Card) => send("/replace", { seat, card });
+// Reveal this seat's annonces to the whole table (on the second trick).
+const showAnnonces = (seat: Seat) => send("/show-annonces", { seat });
 
 /** Queue (or, if already queued, cancel) a card as a pre-move. */
 function togglePremove(card: Card): void {
@@ -422,17 +461,28 @@ function renderQuadrant(seat: Seat, s: GameState): HTMLElement {
     area.appendChild(backs);
   }
 
-  q.append(head, area);
+  q.append(head);
+
+  // Annonces this seat has revealed stay shown to the whole table for the rest
+  // of the hand, under the player's name.
+  const shown = s.shownAnnonces.find((a) => a.seat === seat);
+  if (shown) {
+    const ann = document.createElement("div");
+    ann.className = "shown-annonces";
+    ann.innerHTML = shown.annonces.map(annonceHtml).join(" · ");
+    q.append(ann);
+  }
+
+  q.append(area);
 
   // The card this seat has played to the current trick, shown full-size in the
   // quadrant's inner corner (nearest the table centre) so it's clear who played
   // what.
-  // Once the hand is finished the summary box takes the centre, so the final
-  // trick's four cards are hidden rather than left lingering in the corners.
-  const played =
-    s.phase === "finished"
-      ? undefined
-      : shownTrick(s).find((p) => p.seat === seat)?.card;
+  // Once the summary box takes the centre (after a brief pause on the final
+  // trick) the last four cards are hidden rather than left in the corners.
+  const played = summaryShown()
+    ? undefined
+    : shownTrick(s).find((p) => p.seat === seat)?.card;
   if (played) {
     // Clicking your own card takes the move back entirely while it is still on
     // top — no one has covered it. (Covers a trick's fourth card too, which
@@ -451,6 +501,23 @@ function renderQuadrant(seat: Seat, s: GameState): HTMLElement {
   // Your bid controls, shown only on your turn during bidding.
   if (bidding && mine && s.turn === seat) {
     q.appendChild(renderBidControls(s, seat));
+  }
+
+  // During the second trick a player may reveal their annonces to the whole
+  // table — once, and only if they actually hold a declaration.
+  if (
+    mine &&
+    s.phase === "playing" &&
+    s.tricks.length === 1 &&
+    !s.shownAnnonces.some((a) => a.seat === seat) &&
+    detectAnnonces(s.hands[seat], seat).length > 0
+  ) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "show-annonces";
+    btn.textContent = "Montrer les annonces";
+    btn.addEventListener("click", () => showAnnonces(seat));
+    q.appendChild(btn);
   }
   return q;
 }
@@ -585,6 +652,67 @@ function suitHtml(suit: Suit): string {
 }
 
 const TEAM_NAME = ["Séb·Liam", "Maya·Dadmor"];
+// Carré (four of a kind) values; 7s and 8s don't count toward an annonce.
+const CARRE_POINTS: Partial<Record<Rank, number>> = {
+  J: 200,
+  "9": 150,
+  A: 100,
+  K: 100,
+  Q: 100,
+  "10": 100,
+};
+
+/** Sequence value by length: tierce 20, cinquante 50, cent (5+) 100. */
+function sequencePoints(length: number): number {
+  if (length >= 5) return 100;
+  if (length === 4) return 50;
+  if (length === 3) return 20;
+  return 0;
+}
+
+/**
+ * The annonces in one hand: carrés (four of a counting rank) and the maximal
+ * runs of three or more consecutive cards in a suit. Mirrors the worker's
+ * scorer, just enough for the client to know when to offer "Montrer". The
+ * authoritative award is still the worker's at the end of the hand.
+ */
+function detectAnnonces(hand: Card[], seat: Seat): Annonce[] {
+  const team = (seat % 2) as 0 | 1;
+  const found: Annonce[] = [];
+
+  const counts = new Map<Rank, number>();
+  for (const card of hand) counts.set(card.rank, (counts.get(card.rank) ?? 0) + 1);
+  for (const [rank, count] of counts) {
+    const points = CARRE_POINTS[rank];
+    if (count === 4 && points) found.push({ team, kind: "carre", rank, points });
+  }
+
+  for (const suit of SUITS) {
+    const idx = hand
+      .filter((c) => c.suit === suit)
+      .map((c) => RANKS.indexOf(c.rank))
+      .sort((a, b) => a - b);
+    let start = 0;
+    for (let i = 1; i <= idx.length; i++) {
+      if (i === idx.length || idx[i] !== idx[i - 1] + 1) {
+        const length = i - start;
+        if (length >= 3) {
+          found.push({
+            team,
+            kind: length >= 5 ? "cent" : length === 4 ? "cinquante" : "tierce",
+            rank: RANKS[idx[i - 1]],
+            suit,
+            points: sequencePoints(length),
+          });
+        }
+        start = i;
+      }
+    }
+  }
+
+  return found;
+}
+
 const ANNONCE_NAME: Record<AnnonceKind, string> = {
   tierce: "Tierce",
   cinquante: "Cinquante",
@@ -690,8 +818,9 @@ function render(): void {
   // The turned-up card sits in the middle only while bidding; once play starts
   // the centre is left clear and played cards appear in each quadrant's corner.
   if (state.phase === "bidding") table.appendChild(renderRetourne(state));
-  // Once the hand is over, the centre shows the round-summary box instead.
-  if (state.phase === "finished" && state.result)
+  // Once the hand is over, the centre shows the round-summary box instead —
+  // after a brief pause that leaves the final trick on show (see syncSummary).
+  if (summaryShown() && state.result)
     table.appendChild(renderResultBox(state));
 
   // Remember which cards are on the table so they don't re-animate next redraw.

@@ -200,6 +200,11 @@ function parseAction(
       const p = parseSeatCard(b);
       return "error" in p ? p : { action: { type: "replace", ...p } };
     }
+    case "/show-annonces": {
+      const seat = asSeat(b.seat);
+      if (seat === null) return { error: "seat must be 0–3" };
+      return { action: { type: "showAnnonces", seat } };
+    }
     default:
       return { error: "not found" };
   }

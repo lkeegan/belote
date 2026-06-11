@@ -475,3 +475,67 @@ describe("reduce — a full hand", () => {
     expect(r.ok).toBe(false);
   });
 });
+
+describe("reduce — showAnnonces", () => {
+  // The second trick (one trick complete), with seat 0 still holding a tierce.
+  const craftSecondTrick = (): GameState => ({
+    ...deal(0),
+    phase: "playing",
+    trump: "hearts" as Suit,
+    taker: 0,
+    turn: 0,
+    hands: [
+      [
+        { suit: "spades", rank: "9" },
+        { suit: "spades", rank: "10" },
+        { suit: "spades", rank: "J" },
+      ],
+      [],
+      [],
+      [],
+    ] as Card[][],
+    currentTrick: [],
+    tricks: [
+      {
+        winner: 0,
+        cards: [
+          { seat: 0, card: { suit: "hearts", rank: "7" } },
+          { seat: 1, card: { suit: "hearts", rank: "8" } },
+          { seat: 2, card: { suit: "hearts", rank: "9" } },
+          { seat: 3, card: { suit: "hearts", rank: "10" } },
+        ],
+      },
+    ],
+  });
+
+  it("records a seat's annonces on the second trick", () => {
+    const r = reduce(craftSecondTrick(), { type: "showAnnonces", seat: 0 });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.state.shownAnnonces).toHaveLength(1);
+    expect(r.state.shownAnnonces[0].seat).toBe(0);
+    expect(r.state.shownAnnonces[0].annonces[0].kind).toBe("tierce");
+  });
+
+  it("rejects a reveal outside the second trick", () => {
+    const s = { ...craftSecondTrick(), tricks: [] };
+    const r = reduce(s, { type: "showAnnonces", seat: 0 });
+    expect(r).toEqual({
+      ok: false,
+      error: "annonces are shown on the second trick",
+    });
+  });
+
+  it("rejects a reveal when the hand holds no annonce", () => {
+    const r = reduce(craftSecondTrick(), { type: "showAnnonces", seat: 1 });
+    expect(r).toEqual({ ok: false, error: "no annonces to show" });
+  });
+
+  it("rejects a second reveal by the same seat", () => {
+    const first = reduce(craftSecondTrick(), { type: "showAnnonces", seat: 0 });
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    const again = reduce(first.state, { type: "showAnnonces", seat: 0 });
+    expect(again).toEqual({ ok: false, error: "annonces already shown" });
+  });
+});
