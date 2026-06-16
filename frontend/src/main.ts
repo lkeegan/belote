@@ -590,7 +590,7 @@ function renderRetourne(s: GameState): HTMLElement {
 /**
  * The round-summary box, shown in the middle of the table once the hand is
  * finished: a result heading, the points each team made this hand, the trump,
- * and the running totals at the bottom.
+ * and each column's round total (the sum of its rows) at the bottom.
  */
 function renderResultBox(s: GameState): HTMLElement {
   const r = s.result!;
@@ -605,6 +605,12 @@ function renderResultBox(s: GameState): HTMLElement {
   // A cell showing `pts` only in the column of the team that earned it.
   const cell = (team: 0 | 1 | null, col: 0 | 1, pts: number) =>
     team === col ? `${pts}` : "—";
+  // Column total for this round: the sum of every row shown above it.
+  const roundTotal = (col: 0 | 1) =>
+    r.cardPoints[col] +
+    (r.annonceTeam === col ? r.annoncePoints : 0) +
+    (derTeam === col ? 10 : 0) +
+    (r.beloteTeam === col ? 20 : 0);
 
   const box = document.createElement("div");
   box.className = "result-box";
@@ -633,8 +639,8 @@ function renderResultBox(s: GameState): HTMLElement {
       <span>${cell(r.beloteTeam, 1, 20)}</span>
 
       <span class="rlabel total">Total</span>
-      <span class="total">${s.scores[0]}</span>
-      <span class="total">${s.scores[1]}</span>
+      <span class="total">${roundTotal(0)}</span>
+      <span class="total">${roundTotal(1)}</span>
     </div>
   `;
 
