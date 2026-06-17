@@ -1,6 +1,7 @@
 import "./style.css";
 import { SUITS, RANKS, type Card, type Rank, type Suit } from "./deck";
 import { clearEffect, playResultEffect } from "./effects";
+import { derTeamOf, roundTotals } from "./result";
 
 // Players sit in the four corners, numbered in go-around play order to match
 // the worker's seats: 0 → 1 → 2 → 3 → 0 around the table. Partners sit
@@ -140,6 +141,8 @@ interface Annonce {
   rank: Rank;
   suit?: Suit;
   points: number;
+  /** The cards making up the declaration, in display order (low→high run). */
+  cards: Card[];
 }
 interface HandResult {
   handPoints: [number, number];
@@ -473,7 +476,17 @@ function renderQuadrant(seat: Seat, s: GameState): HTMLElement {
   if (shown) {
     const ann = document.createElement("div");
     ann.className = "shown-annonces";
-    ann.innerHTML = shown.annonces.map(annonceHtml).join(" · ");
+    // Show the actual cards of each declaration (a run reads low→high, a carré
+    // shows its four suits) so the annonce is plain to the whole table.
+    for (const a of shown.annonces) {
+      const group = document.createElement("div");
+      group.className = "annonce-group";
+      group.setAttribute("aria-label", annonceLabel(a));
+      for (const card of a.cards) {
+        group.appendChild(renderCard(card, { trump: card.suit === s.trump }));
+      }
+      ann.append(group);
+    }
     q.append(ann);
   }
 
@@ -600,17 +613,12 @@ function renderResultBox(s: GameState): HTMLElement {
       ? "Contrat réussi"
       : "Dedans";
   // Dix de der (10 for the last trick) goes to whoever won the final trick.
-  const derTeam =
-    s.tricks.length > 0 ? ((s.tricks[s.tricks.length - 1].winner % 2) as 0 | 1) : null;
+  const derTeam = derTeamOf(s.tricks);
   // A cell showing `pts` only in the column of the team that earned it.
   const cell = (team: 0 | 1 | null, col: 0 | 1, pts: number) =>
     team === col ? `${pts}` : "—";
   // Column total for this round: the sum of every row shown above it.
-  const roundTotal = (col: 0 | 1) =>
-    r.cardPoints[col] +
-    (r.annonceTeam === col ? r.annoncePoints : 0) +
-    (derTeam === col ? 10 : 0) +
-    (r.beloteTeam === col ? 20 : 0);
+  const totals = roundTotals(r, derTeam);
 
   const box = document.createElement("div");
   box.className = "result-box";
@@ -639,8 +647,8 @@ function renderResultBox(s: GameState): HTMLElement {
       <span>${cell(r.beloteTeam, 1, 20)}</span>
 
       <span class="rlabel total">Total</span>
-      <span class="total">${roundTotal(0)}</span>
-      <span class="total">${roundTotal(1)}</span>
+      <span class="total">${totals[0]}</span>
+      <span class="total">${totals[1]}</span>
     </div>
   `;
 
@@ -694,25 +702,33 @@ function detectAnnonces(hand: Card[], seat: Seat): Annonce[] {
   for (const card of hand) counts.set(card.rank, (counts.get(card.rank) ?? 0) + 1);
   for (const [rank, count] of counts) {
     const points = CARRE_POINTS[rank];
-    if (count === 4 && points) found.push({ team, kind: "carre", rank, points });
+    if (count === 4 && points) {
+      const cards = hand
+        .filter((c) => c.rank === rank)
+        .sort((a, b) => SUITS.indexOf(a.suit) - SUITS.indexOf(b.suit));
+      found.push({ team, kind: "carre", rank, points, cards });
+    }
   }
 
   for (const suit of SUITS) {
-    const idx = hand
+    const suitCards = hand
       .filter((c) => c.suit === suit)
-      .map((c) => RANKS.indexOf(c.rank))
-      .sort((a, b) => a - b);
+      .sort((a, b) => RANKS.indexOf(a.rank) - RANKS.indexOf(b.rank));
     let start = 0;
-    for (let i = 1; i <= idx.length; i++) {
-      if (i === idx.length || idx[i] !== idx[i - 1] + 1) {
-        const length = i - start;
-        if (length >= 3) {
+    for (let i = 1; i <= suitCards.length; i++) {
+      const consecutive =
+        i < suitCards.length &&
+        RANKS.indexOf(suitCards[i].rank) === RANKS.indexOf(suitCards[i - 1].rank) + 1;
+      if (!consecutive) {
+        const run = suitCards.slice(start, i);
+        if (run.length >= 3) {
           found.push({
             team,
-            kind: length >= 5 ? "cent" : length === 4 ? "cinquante" : "tierce",
-            rank: RANKS[idx[i - 1]],
+            kind: run.length >= 5 ? "cent" : run.length === 4 ? "cinquante" : "tierce",
+            rank: run[run.length - 1].rank,
             suit,
-            points: sequencePoints(length),
+            points: sequencePoints(run.length),
+            cards: run,
           });
         }
         start = i;
@@ -735,6 +751,13 @@ function annonceHtml(a: Annonce): string {
   if (a.kind === "carre") return `Carré de ${RANK_LABEL[a.rank]}`;
   const suit = a.suit ? ` ${suitHtml(a.suit)}` : "";
   return `${ANNONCE_NAME[a.kind]} à ${RANK_LABEL[a.rank]}${suit}`;
+}
+
+/** A plain-text accessibility label for a revealed annonce. */
+function annonceLabel(a: Annonce): string {
+  if (a.kind === "carre") return `Carré de ${RANK_NAME[a.rank]}`;
+  const suit = a.suit ? ` de ${SUIT_NAME[a.suit]}` : "";
+  return `${ANNONCE_NAME[a.kind]} à ${RANK_NAME[a.rank]}${suit}`;
 }
 
 /** The annonces clause for the finished-hand line, or "" if there were none. */

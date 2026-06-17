@@ -244,11 +244,19 @@ body {
   filter: brightness(1.1);
 }
 
-/* Annonces a seat has revealed, listed under the player's name. */
+/* Annonces a seat has revealed, shown as the actual cards under the player's
+   name. Each group is one declaration; the cards are scaled down from a normal
+   hand so several groups fit without crowding the quadrant. */
 .shown-annonces {
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: #f5c542;
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(var(--card-w) * 0.3);
+  align-items: flex-start;
+}
+.shown-annonces .annonce-group {
+  --card-w: clamp(28px, min(4.5vw, 4.5vh), 56px);
+  display: flex;
+  gap: calc(var(--card-w) * 0.12);
 }
 
 .starter-badge {

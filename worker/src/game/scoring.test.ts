@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { type Card, type Rank, type Suit, createDeck } from "./deck";
 import { type Seat, type TrickPlay } from "./rules";
-import { type CompletedTrick, scoreHand } from "./scoring";
+import { type CompletedTrick, handAnnonces, scoreHand } from "./scoring";
 
 const c = (rank: Rank, suit: Suit): Card => ({ rank, suit });
 
@@ -226,7 +226,18 @@ describe("scoreHand — annonces", () => {
     expect(r.annonceTeam).toBe(0);
     expect(r.annoncePoints).toBe(200);
     expect(r.annonces).toEqual([
-      { team: 0, kind: "carre", rank: "J", points: 200 },
+      {
+        team: 0,
+        kind: "carre",
+        rank: "J",
+        points: 200,
+        cards: [
+          c("J", "hearts"),
+          c("J", "diamonds"),
+          c("J", "clubs"),
+          c("J", "spades"),
+        ],
+      },
     ]);
   });
 
@@ -329,5 +340,84 @@ describe("scoreHand — annonces", () => {
     );
     expect(r.annonceTeam).toBe(1);
     expect(r.annoncePoints).toBe(20);
+  });
+});
+
+describe("handAnnonces — declared cards", () => {
+  // The cards array is what clients render when a player reveals their annonces,
+  // so its order matters: a run must read low→high and a carré in suit order.
+  it("lists a sequence's cards low→high regardless of hand order", () => {
+    // The run is given jumbled and in a hand that mixes other suits between.
+    const hand = [
+      c("J", "clubs"),
+      c("9", "clubs"),
+      c("A", "spades"),
+      c("10", "clubs"),
+      c("7", "hearts"),
+    ];
+    const annonces = handAnnonces(hand, 0, "hearts");
+    expect(annonces).toHaveLength(1);
+    expect(annonces[0].kind).toBe("tierce");
+    expect(annonces[0].cards).toEqual([
+      c("9", "clubs"),
+      c("10", "clubs"),
+      c("J", "clubs"),
+    ]);
+  });
+
+  it("lists a longer run (cinquante) low→high", () => {
+    const hand = [
+      c("K", "diamonds"),
+      c("10", "diamonds"),
+      c("Q", "diamonds"),
+      c("J", "diamonds"),
+      c("7", "spades"),
+    ];
+    const annonces = handAnnonces(hand, 0, "hearts");
+    expect(annonces).toHaveLength(1);
+    expect(annonces[0].kind).toBe("cinquante");
+    expect(annonces[0].cards).toEqual([
+      c("10", "diamonds"),
+      c("J", "diamonds"),
+      c("Q", "diamonds"),
+      c("K", "diamonds"),
+    ]);
+  });
+
+  it("lists a carré's four cards in suit order (hearts, diamonds, clubs, spades)", () => {
+    const hand = [
+      c("9", "spades"),
+      c("9", "clubs"),
+      c("9", "hearts"),
+      c("9", "diamonds"),
+      c("7", "hearts"),
+    ];
+    const annonces = handAnnonces(hand, 0, "hearts");
+    expect(annonces).toHaveLength(1);
+    expect(annonces[0].kind).toBe("carre");
+    expect(annonces[0].cards).toEqual([
+      c("9", "hearts"),
+      c("9", "diamonds"),
+      c("9", "clubs"),
+      c("9", "spades"),
+    ]);
+  });
+
+  it("splits two runs in the same suit into separate declarations", () => {
+    // 7-8-9 and J-Q-K of spades: a gap at 10 breaks them into two tierces.
+    const hand = [
+      c("7", "spades"),
+      c("8", "spades"),
+      c("9", "spades"),
+      c("J", "spades"),
+      c("Q", "spades"),
+      c("K", "spades"),
+    ];
+    const annonces = handAnnonces(hand, 0, "hearts");
+    expect(annonces).toHaveLength(2);
+    expect(annonces.map((a) => a.cards)).toEqual([
+      [c("7", "spades"), c("8", "spades"), c("9", "spades")],
+      [c("J", "spades"), c("Q", "spades"), c("K", "spades")],
+    ]);
   });
 });

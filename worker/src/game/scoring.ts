@@ -20,6 +20,12 @@ export interface Annonce {
   /** Suit of a sequence; omitted for a carré (it spans all four suits). */
   suit?: Suit;
   points: number;
+  /**
+   * The cards that make up the declaration, in display order: a sequence runs
+   * low→high (7-8-9…), a carré lists its four suits. Lets clients show the
+   * actual cards when a player reveals their annonces.
+   */
+  cards: Card[];
 }
 
 export interface HandResult {
@@ -74,31 +80,40 @@ export function handAnnonces(hand: Card[], seat: Seat, trump: Suit): Annonce[] {
   const team = teamOf(seat);
   const found: Annonce[] = [];
 
-  // Carrés: a counting rank held four times.
+  // Carrés: a counting rank held four times. Listed in suit order.
   const counts = new Map<Rank, number>();
   for (const card of hand) counts.set(card.rank, (counts.get(card.rank) ?? 0) + 1);
   for (const [rank, count] of counts) {
     const points = CARRE_POINTS[rank];
-    if (count === 4 && points) found.push({ team, kind: "carre", rank, points });
+    if (count === 4 && points) {
+      const cards = hand
+        .filter((c) => c.rank === rank)
+        .sort((a, b) => SUITS.indexOf(a.suit) - SUITS.indexOf(b.suit));
+      found.push({ team, kind: "carre", rank, points, cards });
+    }
   }
 
-  // Sequences: split each suit's ranks into maximal consecutive runs.
+  // Sequences: split each suit's ranks into maximal consecutive runs, each run
+  // kept in low→high order so the declaration reads naturally.
   for (const suit of SUITS) {
-    const idx = hand
+    const suitCards = hand
       .filter((c) => c.suit === suit)
-      .map((c) => RANKS.indexOf(c.rank))
-      .sort((a, b) => a - b);
+      .sort((a, b) => RANKS.indexOf(a.rank) - RANKS.indexOf(b.rank));
     let start = 0;
-    for (let i = 1; i <= idx.length; i++) {
-      if (i === idx.length || idx[i] !== idx[i - 1] + 1) {
-        const length = i - start;
-        if (length >= 3) {
+    for (let i = 1; i <= suitCards.length; i++) {
+      const consecutive =
+        i < suitCards.length &&
+        RANKS.indexOf(suitCards[i].rank) === RANKS.indexOf(suitCards[i - 1].rank) + 1;
+      if (!consecutive) {
+        const run = suitCards.slice(start, i);
+        if (run.length >= 3) {
           found.push({
             team,
-            kind: length >= 5 ? "cent" : length === 4 ? "cinquante" : "tierce",
-            rank: RANKS[idx[i - 1]],
+            kind: run.length >= 5 ? "cent" : run.length === 4 ? "cinquante" : "tierce",
+            rank: run[run.length - 1].rank,
             suit,
-            points: sequencePoints(length),
+            points: sequencePoints(run.length),
+            cards: run,
           });
         }
         start = i;
