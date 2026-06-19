@@ -653,6 +653,31 @@ body {
   }
 }
 
+/* --- Deal animation --- */
+
+/* A card in flight during the deal: positioned absolutely over the table and
+   eased from the centre to its dealt position (set inline in main.ts). */
+.dealing-card {
+  position: absolute;
+  z-index: 4;
+  pointer-events: none;
+  transition:
+    transform 0.28s ease-out,
+    opacity 0.28s ease-out;
+  will-change: transform;
+}
+
+/* The turned-up card lands above the dealt hands as it settles in the middle. */
+.dealing-card.retourne-deal {
+  z-index: 5;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dealing-card {
+    transition: none;
+  }
+}
+
 /* --- Scoreboard --- */
 
 .scoreboard {

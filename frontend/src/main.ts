@@ -213,7 +213,7 @@ function connect(): void {
     offline = false;
     syncPremove(); // play a queued pre-move if it's now this seat's turn
     syncSummary(); // hold the summary box back briefly after the last card
-    render();
+    handleDeal(); // animate a fresh deal, else render normally
   });
 
   socket.addEventListener("close", () => {
@@ -244,7 +244,13 @@ function send(path: string, body: unknown): void {
 function setMySeat(seat: Seat | null): void {
   mySeat = seat;
   premove = null; // a queued pre-move belongs to the seat that set it
-  render();
+  if (seat === null) {
+    cancelDeal(); // leaving the table; stop any deal in progress
+    render();
+    return;
+  }
+  // Picking a seat on a freshly dealt hand starts the deal animation.
+  handleDeal();
 }
 
 let state: GameState | null = null;
@@ -262,6 +268,21 @@ let lastPlayed = new Set<string>();
 const SUMMARY_DELAY_MS = 3000;
 let summaryRevealed = false;
 let summaryTimer: number | null = null;
+
+// --- Deal animation ---------------------------------------------------------
+// On a fresh deal the cards fly out one at a time from the table centre before
+// bidding begins (see runDeal): first three to each seat, then two, then the
+// turned-up card to the middle. These track the in-flight animation so a new
+// deal, a seat change, or the game moving on can cancel it cleanly.
+let dealing = false;
+// Bumped to invalidate a running deal; runDeal aborts once its token is stale.
+let dealToken = 0;
+// Signature of the deal we've already animated, so each fresh deal animates once.
+let animatedDealSig: string | null = null;
+const DEAL_START_PAUSE_MS = 3000; // empty table before the first card
+const DEAL_CARD_MS = 280; // flight time of one card
+const DEAL_GAP_MS = 90; // gap between successive cards
+const DEAL_MID_PAUSE_MS = 3000; // after all 5×4 cards, before the retourne
 
 /** Whether the round-summary box (and the hidden final trick) is now showing. */
 function summaryShown(): boolean {
@@ -515,8 +536,9 @@ function renderQuadrant(seat: Seat, s: GameState): HTMLElement {
     q.appendChild(pc);
   }
 
-  // Your bid controls, shown only on your turn during bidding.
-  if (bidding && mine && s.turn === seat) {
+  // Your bid controls, shown only on your turn during bidding (and not while
+  // the deal is still being dealt out).
+  if (bidding && mine && s.turn === seat && !dealing) {
     q.appendChild(renderBidControls(s, seat));
   }
 
@@ -825,6 +847,12 @@ function render(): void {
   renderScoreboard(state);
   renderChangeSeat();
   renderHeaderStatus(mySeat === null ? null : state);
+
+  // While a deal is being dealt out, the animation owns the table (it builds
+  // the empty quadrants and flies the cards in); leave its DOM untouched so an
+  // incoming bid from another seat doesn't wipe the cards mid-flight.
+  if (dealing) return;
+
   table.replaceChildren();
 
   // Choose a seat before anything else; this device plays only for it.
@@ -858,6 +886,162 @@ function render(): void {
 
   // Remember which cards are on the table so they don't re-animate next redraw.
   lastPlayed = new Set(shownTrick(state).map((p) => cardKey(p.card)));
+}
+
+// --- Deal animation ---------------------------------------------------------
+
+const sleep = (ms: number) => new Promise<void>((r) => window.setTimeout(r, ms));
+
+const prefersReducedMotion = () =>
+  window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+
+/**
+ * A signature that is stable across one deal's whole bidding (bids don't change
+ * the hands or the turned-up card) but differs for the next deal, so each fresh
+ * deal animates exactly once. Null outside bidding.
+ */
+function dealSignature(s: GameState | null): string | null {
+  if (!s || s.phase !== "bidding") return null;
+  return (
+    cardKey(s.trumpCard) +
+    "|" +
+    s.opener +
+    "|" +
+    s.hands.map((h) => h.map(cardKey).join(",")).join(";")
+  );
+}
+
+/**
+ * Decide what to do with freshly arrived (or seat-changed) state: animate a
+ * brand-new deal, let a running deal animation continue, or — once the game has
+ * moved on — tear any animation down and render normally.
+ */
+function handleDeal(): void {
+  const sig = dealSignature(state);
+  if (sig && sig !== animatedDealSig && mySeat !== null) {
+    animatedDealSig = sig;
+    startDeal(state!);
+    return;
+  }
+  // The deal we're animating is still the current one (e.g. another seat bid):
+  // let the animation run on, ignoring the update.
+  if (dealing && sig === animatedDealSig) return;
+  if (dealing) cancelDeal();
+  render();
+}
+
+/** Begin (or restart) the deal animation, unless motion is reduced. */
+function startDeal(s: GameState): void {
+  cancelDeal();
+  if (prefersReducedMotion()) {
+    render();
+    return;
+  }
+  const token = ++dealToken;
+  dealing = true;
+  void runDeal(s, token);
+}
+
+/** Abort any running deal animation and clear its in-flight cards. */
+function cancelDeal(): void {
+  dealToken++;
+  dealing = false;
+  table.querySelectorAll(".dealing-card").forEach((el) => el.remove());
+}
+
+/** The empty table shown during the deal: quadrants with headers but no cards. */
+function renderDealSkeleton(s: GameState): void {
+  table.replaceChildren();
+  const empty: GameState = { ...s, hands: [[], [], [], []] };
+  for (let seat = 0; seat < PLAYERS.length; seat++) {
+    table.appendChild(renderQuadrant(seat as Seat, empty));
+  }
+}
+
+/**
+ * Run the deal: pause on an empty table, fly three cards to each seat then two
+ * (one at a time from the centre), pause once everyone holds five, then turn
+ * the trump card up in the middle. Aborts at any await if its token goes stale.
+ */
+async function runDeal(s: GameState, token: number): Promise<void> {
+  const alive = () => token === dealToken;
+  renderDealSkeleton(s);
+  await sleep(DEAL_START_PAUSE_MS);
+  if (!alive()) return;
+
+  // Packets of three then two, dealt seat by seat — the same order the worker
+  // deals in (see OPENING_PACKETS in the worker's deck).
+  const order: Seat[] = [];
+  for (const packet of [3, 2]) {
+    for (let seat = 0; seat < PLAYERS.length; seat++) {
+      for (let c = 0; c < packet; c++) order.push(seat as Seat);
+    }
+  }
+  const dealt: [number, number, number, number] = [0, 0, 0, 0];
+  for (const seat of order) {
+    if (!alive()) return;
+    flyCard(seat, dealt[seat]++);
+    await sleep(DEAL_CARD_MS + DEAL_GAP_MS);
+  }
+  if (!alive()) return;
+
+  await sleep(DEAL_MID_PAUSE_MS);
+  if (!alive()) return;
+  flyRetourne(s);
+  await sleep(DEAL_CARD_MS + 200);
+  if (!alive()) return;
+
+  dealing = false;
+  render(); // hand off to the real, fully-dealt view
+}
+
+/** The table centre, in the table's own coordinate space. */
+function tableCentre(): { x: number; y: number } {
+  const r = table.getBoundingClientRect();
+  return { x: r.width / 2, y: r.height / 2 };
+}
+
+/** Fly one face-down card from the centre to its place in `seat`'s hand. */
+function flyCard(seat: Seat, k: number): void {
+  const el = renderBack();
+  el.classList.add("dealing-card");
+  table.appendChild(el);
+  const cw = el.offsetWidth;
+  const ch = el.offsetHeight;
+  const tableRect = table.getBoundingClientRect();
+  const q = table.querySelector<HTMLElement>("." + CORNERS[seat])!;
+  const qr = q.getBoundingClientRect();
+  // Land near the seat's centre, fanned out by card index so five cards spread
+  // like a hand rather than stacking on one spot.
+  const tx = (qr.left + qr.right) / 2 - tableRect.left + (k - 2) * cw * 0.28;
+  const ty = (qr.top + qr.bottom) / 2 - tableRect.top;
+  const c = tableCentre();
+  el.style.left = `${tx - cw / 2}px`;
+  el.style.top = `${ty - ch / 2}px`;
+  el.style.transform = `translate(${c.x - tx}px, ${c.y - ty}px) scale(0.8)`;
+  void el.offsetWidth; // reflow so the transition runs from the centre
+  requestAnimationFrame(() => {
+    el.style.transform = `rotate(${(k - 2) * 7}deg)`;
+  });
+}
+
+/** Turn the trump card up in the middle, the last step of the deal. */
+function flyRetourne(s: GameState): void {
+  const el = renderCard(s.trumpCard, { trump: true });
+  el.classList.add("dealing-card", "retourne-deal");
+  table.appendChild(el);
+  const cw = el.offsetWidth;
+  const ch = el.offsetHeight;
+  const c = tableCentre();
+  el.style.left = `${c.x - cw / 2}px`;
+  el.style.top = `${c.y - ch / 2}px`;
+  el.style.opacity = "0";
+  el.style.transform = "translateY(-28px) scale(0.6)";
+  void el.offsetWidth;
+  requestAnimationFrame(() => {
+    el.style.opacity = "1";
+    el.style.transform = "none";
+  });
 }
 
 // --- Wiring -----------------------------------------------------------------
