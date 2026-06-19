@@ -1050,11 +1050,16 @@ function flyCard(seat: Seat, k: number): void {
   const c = tableCentre();
   el.style.left = `${tx - cw / 2}px`;
   el.style.top = `${ty - ch / 2}px`;
-  el.style.transform = `translate(${c.x - tx}px, ${c.y - ty}px) scale(0.8)`;
-  void el.offsetWidth; // reflow so the transition runs from the centre
-  requestAnimationFrame(() => {
-    el.style.transform = `rotate(${(k - 2) * 7}deg)`;
-  });
+  // Start stacked at the table centre, then ease out to the dealt spot. Both
+  // transforms list the same functions so the path interpolates cleanly, and a
+  // double rAF commits the centred start before it animates (a single reflow can
+  // be skipped, leaving the card to just appear in place).
+  el.style.transform = `translate(${c.x - tx}px, ${c.y - ty}px) rotate(0deg) scale(0.82)`;
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() => {
+      el.style.transform = `translate(0px, 0px) rotate(${(k - 2) * 7}deg) scale(1)`;
+    }),
+  );
 }
 
 /** Turn the trump card up in the middle, the last step of the deal. */
@@ -1069,11 +1074,12 @@ function flyRetourne(s: GameState): void {
   el.style.top = `${c.y - ch / 2}px`;
   el.style.opacity = "0";
   el.style.transform = "translateY(-28px) scale(0.6)";
-  void el.offsetWidth;
-  requestAnimationFrame(() => {
-    el.style.opacity = "1";
-    el.style.transform = "none";
-  });
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() => {
+      el.style.opacity = "1";
+      el.style.transform = "none";
+    }),
+  );
 }
 
 // --- Wiring -----------------------------------------------------------------
