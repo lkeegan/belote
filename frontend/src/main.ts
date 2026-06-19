@@ -279,6 +279,10 @@ let dealing = false;
 let dealToken = 0;
 // Signature of the deal we've already animated, so each fresh deal animates once.
 let animatedDealSig: string | null = null;
+// Where each seat's cards landed during the deal (viewport coords, in deal
+// order), so the real hand can settle in from those spots — and the player's
+// cards turn over there — when the deal hands off to the live view.
+let dealtSpots: { x: number; y: number }[][] = [[], [], [], []];
 const DEAL_START_PAUSE_MS = 3000; // empty table before the first card
 const DEAL_CARD_MS = 280; // flight time of one card
 const DEAL_GAP_MS = 90; // gap between successive cards
@@ -965,6 +969,7 @@ function renderDealSkeleton(s: GameState): void {
  */
 async function runDeal(s: GameState, token: number): Promise<void> {
   const alive = () => token === dealToken;
+  dealtSpots = [[], [], [], []];
   renderDealSkeleton(s);
   await sleep(DEAL_START_PAUSE_MS);
   if (!alive()) return;
@@ -993,6 +998,31 @@ async function runDeal(s: GameState, token: number): Promise<void> {
 
   dealing = false;
   render(); // hand off to the real, fully-dealt view
+  settleHands(); // slide each card from where it was dealt, turning yours over
+}
+
+/**
+ * Animate the freshly rendered hands in from where the deal left the cards: each
+ * card starts at its dealt spot and eases to its place in the hand, and your own
+ * cards turn over (a flip reveal) as they arrive. Runs right after render so the
+ * cards never paint at their final spots first.
+ */
+function settleHands(): void {
+  for (let seat = 0; seat < PLAYERS.length; seat++) {
+    const q = table.querySelector<HTMLElement>("." + CORNERS[seat]);
+    if (!q) continue;
+    const spots = dealtSpots[seat] ?? [];
+    const cards = q.querySelectorAll<HTMLElement>(".cards .card");
+    cards.forEach((el, i) => {
+      const r = el.getBoundingClientRect();
+      const from = spots[i] ?? spots[spots.length - 1];
+      if (!from) return;
+      el.style.setProperty("--dx", `${from.x - (r.left + r.width / 2)}px`);
+      el.style.setProperty("--dy", `${from.y - (r.top + r.height / 2)}px`);
+      el.classList.add("deal-settle");
+      if (seat === mySeat) el.classList.add("reveal"); // your cards turn over
+    });
+  }
 }
 
 /** The table centre, in the table's own coordinate space. */
@@ -1015,6 +1045,8 @@ function flyCard(seat: Seat, k: number): void {
   // like a hand rather than stacking on one spot.
   const tx = (qr.left + qr.right) / 2 - tableRect.left + (k - 2) * cw * 0.28;
   const ty = (qr.top + qr.bottom) / 2 - tableRect.top;
+  // Remember where this card lands so the real hand can settle in from here.
+  dealtSpots[seat][k] = { x: tableRect.left + tx, y: tableRect.top + ty };
   const c = tableCentre();
   el.style.left = `${tx - cw / 2}px`;
   el.style.top = `${ty - ch / 2}px`;

@@ -678,6 +678,37 @@ body {
   }
 }
 
+/* Once dealt, each hand card settles in from the spot it was dealt to (--dx/--dy
+   point back there). Your own cards also turn over with a flip (scaleX) reveal. */
+.card.deal-settle {
+  animation: deal-settle 0.42s ease-out both;
+}
+.card.deal-settle.reveal {
+  animation: deal-reveal 0.42s ease-out both;
+}
+@keyframes deal-settle {
+  from {
+    transform: translate(var(--dx, 0), var(--dy, 0));
+  }
+  to {
+    transform: translate(0, 0);
+  }
+}
+@keyframes deal-reveal {
+  from {
+    transform: translate(var(--dx, 0), var(--dy, 0)) scaleX(0.04);
+  }
+  to {
+    transform: translate(0, 0) scaleX(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .card.deal-settle,
+  .card.deal-settle.reveal {
+    animation: none;
+  }
+}
+
 /* --- Scoreboard --- */
 
 .scoreboard {
