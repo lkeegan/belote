@@ -209,11 +209,13 @@ function connect(): void {
       if (data.error === "no game in progress") send("/new", undefined);
       return;
     }
+    const prev = state;
     state = data as GameState;
     offline = false;
     syncPremove(); // play a queued pre-move if it's now this seat's turn
     syncSummary(); // hold the summary box back briefly after the last card
-    handleDeal(); // animate a fresh deal, else render normally
+    if (sweepNeeded(prev)) startSweep(); // gather the finished trick to its winner
+    else handleDeal(); // animate a fresh deal, else render normally
   });
 
   socket.addEventListener("close", () => {
@@ -287,6 +289,13 @@ const DEAL_START_PAUSE_MS = 3000; // empty table before the first card
 const DEAL_CARD_MS = 280; // flight time of one card
 const DEAL_GAP_MS = 90; // gap between successive cards
 const DEAL_MID_PAUSE_MS = 3000; // after all 5×4 cards, before the retourne
+
+// When the winner leads the next trick, the completed trick's four cards first
+// sweep across to that winner before the new card appears. These guard that
+// brief animation the way the deal's do.
+let sweeping = false;
+let sweepToken = 0;
+const SWEEP_MS = 420; // time for the gathered trick to reach the winner
 
 /** Whether the round-summary box (and the hidden final trick) is now showing. */
 function summaryShown(): boolean {
@@ -852,10 +861,10 @@ function render(): void {
   renderChangeSeat();
   renderHeaderStatus(mySeat === null ? null : state);
 
-  // While a deal is being dealt out, the animation owns the table (it builds
-  // the empty quadrants and flies the cards in); leave its DOM untouched so an
-  // incoming bid from another seat doesn't wipe the cards mid-flight.
-  if (dealing) return;
+  // While a deal is dealt out, or a finished trick is sweeping to its winner,
+  // the animation owns the table — leave its DOM untouched so an incoming
+  // broadcast doesn't wipe the cards mid-flight.
+  if (dealing || sweeping) return;
 
   table.replaceChildren();
 
@@ -946,10 +955,12 @@ function startDeal(s: GameState): void {
   void runDeal(s, token);
 }
 
-/** Abort any running deal animation and clear its in-flight cards. */
+/** Abort any running deal or trick-sweep animation and clear its in-flight cards. */
 function cancelDeal(): void {
   dealToken++;
+  sweepToken++; // a deal supersedes any trick sweep still settling
   dealing = false;
+  sweeping = false;
   table.querySelectorAll(".dealing-card").forEach((el) => el.remove());
 }
 
@@ -1023,6 +1034,59 @@ function settleHands(): void {
       if (seat === mySeat) el.classList.add("reveal"); // your cards turn over
     });
   }
+}
+
+/**
+ * Whether to sweep a finished trick to its winner: the previous state showed a
+ * completed trick sitting on the table (no card led yet) and the new state has
+ * just led the next trick's first card. The same completed trick is still the
+ * last one in `tricks`, so its count is unchanged.
+ */
+function sweepNeeded(prev: GameState | null): boolean {
+  return (
+    !!prev &&
+    !!state &&
+    state.phase === "playing" &&
+    prev.currentTrick.length === 0 &&
+    prev.tricks.length > 0 &&
+    state.currentTrick.length >= 1 &&
+    state.tricks.length === prev.tricks.length
+  );
+}
+
+/**
+ * Gather the just-finished trick's four cards across to the player who won it,
+ * then hand off to the real view so the newly led card appears. The cards from
+ * the previous render are still on the table; animate those in place.
+ */
+function startSweep(): void {
+  const winner = state!.tricks[state!.tricks.length - 1].winner;
+  const cards = Array.from(table.querySelectorAll<HTMLElement>(".played"));
+  if (prefersReducedMotion() || cards.length === 0) {
+    render();
+    return;
+  }
+  cancelDeal(); // never run a sweep and a deal at once
+  const token = ++sweepToken;
+  sweeping = true;
+
+  const wq = table.querySelector<HTMLElement>("." + CORNERS[winner])!;
+  const wr = wq.getBoundingClientRect();
+  const target = { x: (wr.left + wr.right) / 2, y: (wr.top + wr.bottom) / 2 };
+  cards.forEach((el, i) => {
+    const r = el.getBoundingClientRect();
+    el.classList.remove("deal-in"); // its play-in is done; don't fight the sweep
+    el.classList.add("sweeping");
+    el.style.setProperty("--swx", `${target.x - (r.left + r.width / 2)}px`);
+    el.style.setProperty("--swy", `${target.y - (r.top + r.height / 2)}px`);
+    el.style.setProperty("--swr", `${(i - 1.5) * 8}deg`);
+  });
+
+  window.setTimeout(() => {
+    if (token !== sweepToken) return;
+    sweeping = false;
+    render(); // now the newly led card appears
+  }, SWEEP_MS);
 }
 
 /** The table centre, in the table's own coordinate space. */

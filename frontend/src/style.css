@@ -653,6 +653,26 @@ body {
   }
 }
 
+/* When the next trick is led, the finished trick's cards gather across to the
+   player who won it (--swx/--swy point at the winner's seat) and fade as they
+   are collected, before the newly led card appears. */
+.played.sweeping {
+  z-index: 4;
+  animation: trick-sweep 0.42s ease-in forwards;
+}
+@keyframes trick-sweep {
+  to {
+    transform: translate(var(--swx, 0), var(--swy, 0)) rotate(var(--swr, 0))
+      scale(0.82);
+    opacity: 0.1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .played.sweeping {
+    animation: none;
+  }
+}
+
 /* --- Deal animation --- */
 
 /* A card in flight during the deal: positioned absolutely over the table and
