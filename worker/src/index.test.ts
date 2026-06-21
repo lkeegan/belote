@@ -22,8 +22,14 @@ beforeEach(async () => {
   await runInDurableObject(stub, async (instance, state) => {
     await state.storage.deleteAll();
     // The object caches state in memory; clearing storage out-of-band (as only
-    // a test does) would otherwise leave the cache holding the previous game.
-    (instance as unknown as { cached: undefined }).cached = undefined;
+    // a test does) would otherwise leave the cache (and the memoised first deal)
+    // holding the previous game.
+    const priv = instance as unknown as {
+      cached: undefined;
+      firstDeal: undefined;
+    };
+    priv.cached = undefined;
+    priv.firstDeal = undefined;
   });
 });
 
@@ -97,24 +103,21 @@ describe("WebSocket layer", () => {
     expect(status).toBe(403);
   });
 
-  it("reports no game on connect before one is started", async () => {
-    const { initial } = await connect();
-    expect(initial).toEqual({ error: "no game in progress" });
+  it("deals the first hand on connect", async () => {
+    const { initial } = (await connect()) as { initial: GameState };
+    expect(initial.phase).toBe("bidding");
+    expect(initial.opener).toBe(0); // first deal opens with seat 0
+    expect(initial.scores).toEqual([0, 0]);
+    expect(initial.hands.every((h) => h.length === 5)).toBe(true);
   });
 
-  it("deals on /new and persists for a later connection", async () => {
-    const { client, initial } = await connect();
-    expect(initial).toEqual({ error: "no game in progress" });
-
-    client!.send("/new");
-    const state = (await client!.next()) as GameState;
-    expect(state.phase).toBe("bidding");
-    expect(state.opener).toBe(0); // first deal opens with seat 0
-
-    // A separate connection sees the same persisted game on connect.
+  it("persists that game for a later connection", async () => {
+    const { initial } = (await connect()) as { initial: GameState };
+    // A separate connection sees the same persisted game on connect, not a
+    // fresh deal.
     const { initial: fetched } = (await connect()) as { initial: GameState };
-    expect(fetched.phase).toBe("bidding");
-    expect(fetched.hands.every((h) => h.length === 5)).toBe(true);
+    expect(fetched.opener).toBe(initial.opener);
+    expect(fetched.hands).toEqual(initial.hands);
   });
 
   it("broadcasts a move to every connected client", async () => {
@@ -209,8 +212,7 @@ describe("WebSocket layer", () => {
   });
 
   it("validates action messages", async () => {
-    const { client, initial } = await connect();
-    expect(initial).toEqual({ error: "no game in progress" });
+    const { client } = await connect();
 
     client!.send("/bid", { seat: 9 });
     expect(await client!.next()).toEqual({ error: expect.any(String) });

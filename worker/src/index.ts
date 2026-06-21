@@ -59,6 +59,9 @@ export class BeloteGame extends DurableObject<Env> {
   // `undefined` means "not yet loaded" (the field is empty after a hibernation
   // eviction), which triggers a single reload.
   private cached: GameState | null | undefined;
+  // The in-flight first deal, so several sockets connecting to an empty table
+  // converge on one game instead of each racing to start its own.
+  private firstDeal?: Promise<GameState>;
 
   /** The current game state, or null if no game has been started. */
   async getState(): Promise<GameState | null> {
@@ -66,6 +69,21 @@ export class BeloteGame extends DurableObject<Env> {
       this.cached = (await this.ctx.storage.get<GameState>(STATE_KEY)) ?? null;
     }
     return this.cached;
+  }
+
+  /**
+   * The current game, dealing the first hand if none exists yet. The deal is
+   * memoised so concurrent connects to an empty table all get the same first
+   * game rather than each dealing one (the `??=` assignment is synchronous, so
+   * only the first caller past the null check starts it).
+   */
+  private async ensureGame(): Promise<GameState> {
+    const existing = await this.getState();
+    if (existing) return existing;
+    this.firstDeal ??= this.apply({ type: "new" }).then(
+      (r) => (r.ok ? r.state : (this.cached as GameState)),
+    );
+    return this.firstDeal;
   }
 
   /** Apply an action, persisting and returning the next state, or an error. */
@@ -92,11 +110,12 @@ export class BeloteGame extends DurableObject<Env> {
     const { 0: client, 1: server } = new WebSocketPair();
     this.ctx.acceptWebSocket(server);
 
-    // Send the current state immediately so the new client renders at once.
-    const state = await this.getState();
-    server.send(
-      JSON.stringify(state ? toClientState(state) : { error: "no game in progress" }),
-    );
+    // Send the current state immediately so the new client renders at once,
+    // dealing the first hand if the table is still empty. Dealing here (rather
+    // than telling each client to send /new) means several clients connecting at
+    // once converge on one deal instead of racing to start several.
+    const state = await this.ensureGame();
+    server.send(JSON.stringify(toClientState(state)));
     return new Response(null, { status: 101, webSocket: client });
   }
 

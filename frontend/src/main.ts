@@ -259,9 +259,9 @@ function connect(): void {
   socket.addEventListener("message", (ev) => {
     const data = JSON.parse(ev.data as string);
     if (data && typeof data === "object" && "error" in data) {
-      // No game yet → deal the first hand. Action rejections (e.g. an illegal
-      // move) need no handling: every client already holds authoritative state.
-      if (data.error === "no game in progress") send("/new", undefined);
+      // An action rejection (e.g. an illegal move) needs no handling: every
+      // client already holds authoritative state. The worker deals the first
+      // hand itself on connect, so there's no "no game" case to start here.
       return;
     }
     if (data && typeof data === "object" && "reveal" in data) {
