@@ -740,8 +740,10 @@ function renderWinBox(s: GameState, winner: 0 | 1): HTMLElement {
 
 /**
  * The round-summary box, shown in the middle of the table once the hand is
- * finished: a result heading, the points each team made this hand, the trump,
- * and each column's round total (the sum of its rows) at the bottom.
+ * finished: a result heading, the points each team made this hand, each
+ * column's round total (the sum of its rows), and below it the Résultat — the
+ * score actually awarded, which differs from the total on a dedans or capot
+ * (the failed taker's points all go to the defenders).
  */
 function renderResultBox(s: GameState): HTMLElement {
   const r = s.result!;
@@ -787,6 +789,10 @@ function renderResultBox(s: GameState): HTMLElement {
       <span class="rlabel total">Total</span>
       <span class="total">${totals[0]}</span>
       <span class="total">${totals[1]}</span>
+
+      <span class="rlabel outcome">Résultat</span>
+      <span class="outcome">${r.handPoints[0]}</span>
+      <span class="outcome">${r.handPoints[1]}</span>
     </div>
   `;
 

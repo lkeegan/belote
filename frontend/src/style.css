@@ -594,6 +594,15 @@ body {
   font-size: 1.1rem;
 }
 
+/* The score actually awarded (differs from the total on a dedans/capot),
+   highlighted as the line that matters. */
+.result-grid .outcome {
+  margin-top: 0.2rem;
+  font-weight: 800;
+  font-size: 1.15rem;
+  color: #f5c542;
+}
+
 /* The match-over screen's final scoreboard: just the two teams and their
    totals side by side, the totals divided off by the shared .total rule. */
 .win-grid {
