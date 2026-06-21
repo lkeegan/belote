@@ -285,7 +285,7 @@ body {
   color: #14502c;
 }
 
-#next-game {
+#new-match {
   font-size: 0.95rem;
   padding: 0.45rem 1.1rem;
   border: none;
@@ -297,7 +297,7 @@ body {
   transition: filter 0.15s ease;
 }
 
-#next-game:hover {
+#new-match:hover {
   filter: brightness(1.07);
 }
 
@@ -761,20 +761,6 @@ body {
 }
 .scoreboard .sep {
   opacity: 0.6;
-}
-
-#clear-scores {
-  font-size: 0.8rem;
-  padding: 0.3rem 0.7rem;
-  border: 1px solid rgba(255, 255, 255, 0.35);
-  border-radius: 999px;
-  background: transparent;
-  color: #fff;
-  cursor: pointer;
-  opacity: 0.8;
-}
-#clear-scores:hover {
-  opacity: 1;
 }
 
 /* Card sizing is fluid (see --card-w), so it no longer needs breakpoints.

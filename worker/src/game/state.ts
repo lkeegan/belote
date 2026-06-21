@@ -69,7 +69,8 @@ export type Action =
   | { type: "undo"; seat: Seat }
   // Swap the last played card for another (take back, then play in its place).
   | { type: "replace"; seat: Seat; card: Card }
-  | { type: "clear" };
+  // Start a new match: reshuffle a fresh pack and reset the scores to zero.
+  | { type: "match" };
 
 export type ReduceResult =
   | { ok: true; state: GameState }
@@ -151,6 +152,12 @@ export function reduce(
     return { ok: true, state: game };
   }
 
+  if (action.type === "match") {
+    // A new match is the one time the pack is shuffled: a fresh deal opened by
+    // seat 0 with the scores back to zero.
+    return { ok: true, state: createGame(0, rng) };
+  }
+
   if (!state) return err("no game in progress");
 
   switch (action.type) {
@@ -162,8 +169,6 @@ export function reduce(
       return undo(state, action.seat);
     case "replace":
       return replace(state, action.seat, action.card);
-    case "clear":
-      return { ok: true, state: { ...state, scores: [0, 0] } };
   }
 }
 

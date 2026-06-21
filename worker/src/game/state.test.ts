@@ -56,20 +56,24 @@ describe("reduce — new and guards", () => {
     expect(r.state.phase).toBe("bidding");
   });
 
-  it("clears accumulated scores without redealing", () => {
-    const playing = { ...deal(0), scores: [120, 42] as [number, number] };
-    const r = reduce(playing, { type: "clear" });
+  it("starts a new match: resets scores, reopens with seat 0, and redeals", () => {
+    const playing = { ...deal(2), scores: [120, 42] as [number, number] };
+    const r = reduce(playing, { type: "match" });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.state.scores).toEqual([0, 0]);
-    expect(r.state.hands).toEqual(playing.hands); // same deal, only scores reset
+    expect(r.state.opener).toBe(0);
+    expect(r.state.phase).toBe("bidding");
+    expect(handSizes(r.state)).toEqual([5, 5, 5, 5]);
   });
 
-  it("rejects clear when there is no game", () => {
-    expect(reduce(null, { type: "clear" })).toEqual({
-      ok: false,
-      error: "no game in progress",
-    });
+  it("starts a match even when there is no game yet", () => {
+    const r = reduce(null, { type: "match" });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.state.scores).toEqual([0, 0]);
+    expect(r.state.opener).toBe(0);
+    expect(r.state.phase).toBe("bidding");
   });
 });
 

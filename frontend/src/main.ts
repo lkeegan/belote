@@ -439,17 +439,25 @@ function syncPremove(): void {
   }
 }
 
-/** Reset the cumulative scores (kept across games on the worker). */
-function clearScores(): void {
-  if (!state) return;
-  if (window.confirm("Effacer les scores cumulés ?")) send("/clear", undefined);
+/**
+ * Start a new match: reshuffle a fresh pack and reset the cumulative scores to
+ * zero. This is the only time the cards are shuffled — every other deal gathers
+ * and cuts the pack. Confirms first if a match is already under way.
+ */
+function newMatch(): void {
+  if (
+    state &&
+    !window.confirm("Nouvelle partie ? Les scores seront remis à zéro.")
+  )
+    return;
+  send("/new-match", undefined);
 }
 
 // --- Rendering --------------------------------------------------------------
 
 const table = document.querySelector<HTMLElement>("#table")!;
 const scoreboard = document.querySelector<HTMLElement>("#scoreboard")!;
-const clearBtn = document.querySelector<HTMLButtonElement>("#clear-scores")!;
+const newMatchBtn = document.querySelector<HTMLButtonElement>("#new-match")!;
 const changeSeat = document.querySelector<HTMLButtonElement>("#change-seat")!;
 const statusEl = document.querySelector<HTMLElement>("#status")!;
 const titleEl = document.querySelector<HTMLElement>("#title")!;
@@ -885,7 +893,6 @@ function renderHeaderStatus(s: GameState | null): void {
 }
 
 function renderScoreboard(s: GameState | null): void {
-  clearBtn.hidden = !s;
   if (!s) {
     scoreboard.textContent = "";
     return;
@@ -902,6 +909,8 @@ function renderStatus(): void {
 
 function renderChangeSeat(): void {
   changeSeat.hidden = mySeat === null;
+  // Starting a new match is available once you're seated.
+  newMatchBtn.hidden = mySeat === null;
 }
 
 function renderTitle(): void {
@@ -938,7 +947,7 @@ function render(): void {
     msg.className = "empty-msg";
     msg.textContent = offline
       ? "Worker hors ligne — nouvelle tentative…"
-      : "Aucune partie. Touchez « Nouvelle donne » pour distribuer.";
+      : "Aucune partie. Touchez « Nouvelle partie » pour distribuer.";
     table.appendChild(msg);
     return;
   }
@@ -1256,11 +1265,8 @@ function flyRetourne(s: GameState): void {
 
 // --- Wiring -----------------------------------------------------------------
 
-clearBtn.addEventListener("click", clearScores);
+newMatchBtn.addEventListener("click", newMatch);
 changeSeat.addEventListener("click", () => setMySeat(null));
-
-const nextGame = document.querySelector<HTMLButtonElement>("#next-game")!;
-nextGame.addEventListener("click", () => newGame());
 
 // Open the socket. On connect the worker pushes the current game (or signals
 // none, prompting the first deal), and every later move arrives as a broadcast.

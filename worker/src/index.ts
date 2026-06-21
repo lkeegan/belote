@@ -205,8 +205,8 @@ function parseAction(
         return { error: "invalid suit" };
       return { action: { type: "bid", seat, suit } };
     }
-    case "/clear":
-      return { action: { type: "clear" } };
+    case "/new-match":
+      return { action: { type: "match" } };
     case "/undo": {
       const seat = asSeat(b.seat);
       if (seat === null) return { error: "seat must be 0–3" };

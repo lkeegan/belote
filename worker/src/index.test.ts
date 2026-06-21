@@ -174,13 +174,13 @@ describe("WebSocket layer", () => {
     expect(state.result).toBeDefined();
     expect(state.scores).toEqual(state.result!.handPoints);
 
-    // A new deal keeps the cumulative scores; /clear resets them.
+    // A new deal keeps the cumulative scores; a new match resets them.
     client!.send("/new");
     const carried = (await client!.next()) as GameState;
     expect(carried.scores).toEqual(state.scores);
-    client!.send("/clear");
-    const cleared = (await client!.next()) as GameState;
-    expect(cleared.scores).toEqual([0, 0]);
+    client!.send("/new-match");
+    const reset = (await client!.next()) as GameState;
+    expect(reset.scores).toEqual([0, 0]);
   });
 
   it("includes the current turn's legal cards while playing", async () => {
