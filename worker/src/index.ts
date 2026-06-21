@@ -5,6 +5,7 @@ import {
   type Action,
   type GameState,
   type ReduceResult,
+  annoncesToReveal,
   reduce,
   replaceOptions,
 } from "./game/state";
@@ -99,6 +100,25 @@ export class BeloteGame extends DurableObject<Env> {
       ws.send(JSON.stringify({ error: "invalid message" }));
       return;
     }
+    // Showing annonces is an ephemeral table-wide reveal, not a state change:
+    // validate against the live state and broadcast the cards to everyone, so
+    // every client flashes them full-size for a moment. Nothing is stored, so a
+    // player may ask to show them again while the second trick is open.
+    if (String(envelope.path) === "/show-annonces") {
+      const seat = asSeat((envelope.body as { seat?: unknown })?.seat);
+      if (seat === null) {
+        ws.send(JSON.stringify({ error: "seat must be 0–3" }));
+        return;
+      }
+      const reveal = annoncesToReveal(await this.getState(), seat);
+      if (!reveal.ok) {
+        ws.send(JSON.stringify({ error: reveal.error }));
+        return;
+      }
+      this.broadcast({ reveal: { seat, annonces: reveal.annonces } });
+      return;
+    }
+
     const parsed = parseAction(String(envelope.path), envelope.body);
     if ("error" in parsed) {
       ws.send(JSON.stringify({ error: parsed.error }));
@@ -199,11 +219,6 @@ function parseAction(
     case "/replace": {
       const p = parseSeatCard(b);
       return "error" in p ? p : { action: { type: "replace", ...p } };
-    }
-    case "/show-annonces": {
-      const seat = asSeat(b.seat);
-      if (seat === null) return { error: "seat must be 0–3" };
-      return { action: { type: "showAnnonces", seat } };
     }
     default:
       return { error: "not found" };

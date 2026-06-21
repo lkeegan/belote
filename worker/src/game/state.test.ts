@@ -1,7 +1,13 @@
 import { describe, it, expect } from "vitest";
 import { type Card, type Suit, SUITS, makeRng } from "./deck";
 import { type Seat, legalMoves, nextSeat } from "./rules";
-import { type GameState, createGame, reduce, replaceOptions } from "./state";
+import {
+  type GameState,
+  annoncesToReveal,
+  createGame,
+  reduce,
+  replaceOptions,
+} from "./state";
 
 const handSizes = (s: GameState) => s.hands.map((h) => h.length);
 
@@ -476,7 +482,7 @@ describe("reduce — a full hand", () => {
   });
 });
 
-describe("reduce — showAnnonces", () => {
+describe("annoncesToReveal", () => {
   // The second trick (one trick complete), with seat 0 still holding a tierce.
   const craftSecondTrick = (): GameState => ({
     ...deal(0),
@@ -508,34 +514,31 @@ describe("reduce — showAnnonces", () => {
     ],
   });
 
-  it("records a seat's annonces on the second trick", () => {
-    const r = reduce(craftSecondTrick(), { type: "showAnnonces", seat: 0 });
+  it("reports a seat's annonces on the second trick", () => {
+    const r = annoncesToReveal(craftSecondTrick(), 0);
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.state.shownAnnonces).toHaveLength(1);
-    expect(r.state.shownAnnonces[0].seat).toBe(0);
-    expect(r.state.shownAnnonces[0].annonces[0].kind).toBe("tierce");
+    expect(r.annonces[0].kind).toBe("tierce");
   });
 
   it("rejects a reveal outside the second trick", () => {
     const s = { ...craftSecondTrick(), tricks: [] };
-    const r = reduce(s, { type: "showAnnonces", seat: 0 });
-    expect(r).toEqual({
+    expect(annoncesToReveal(s, 0)).toEqual({
       ok: false,
       error: "annonces are shown on the second trick",
     });
   });
 
   it("rejects a reveal when the hand holds no annonce", () => {
-    const r = reduce(craftSecondTrick(), { type: "showAnnonces", seat: 1 });
-    expect(r).toEqual({ ok: false, error: "no annonces to show" });
+    expect(annoncesToReveal(craftSecondTrick(), 1)).toEqual({
+      ok: false,
+      error: "no annonces to show",
+    });
   });
 
-  it("rejects a second reveal by the same seat", () => {
-    const first = reduce(craftSecondTrick(), { type: "showAnnonces", seat: 0 });
-    expect(first.ok).toBe(true);
-    if (!first.ok) return;
-    const again = reduce(first.state, { type: "showAnnonces", seat: 0 });
-    expect(again).toEqual({ ok: false, error: "annonces already shown" });
+  it("lets the same seat reveal again (the reveal is ephemeral)", () => {
+    const s = craftSecondTrick();
+    expect(annoncesToReveal(s, 0).ok).toBe(true);
+    expect(annoncesToReveal(s, 0).ok).toBe(true);
   });
 });

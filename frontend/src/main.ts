@@ -166,8 +166,6 @@ interface GameState {
   passes: number;
   currentTrick: TrickPlay[];
   tricks: { winner: Seat; cards: TrickPlay[] }[];
-  /** Annonces players have revealed this hand, shown to the whole table. */
-  shownAnnonces: { seat: Seat; annonces: Annonce[] }[];
   scores: [number, number];
   result?: HandResult;
   legal: Card[];
@@ -209,6 +207,11 @@ function connect(): void {
       if (data.error === "no game in progress") send("/new", undefined);
       return;
     }
+    if (data && typeof data === "object" && "reveal" in data) {
+      // A player asked to show their annonces: flash them across the table.
+      showReveal(data.reveal as { seat: Seat; annonces: Annonce[] });
+      return;
+    }
     const prev = state;
     state = data as GameState;
     offline = false;
@@ -247,7 +250,7 @@ function setMySeat(seat: Seat | null): void {
   mySeat = seat;
   premove = null; // a queued pre-move belongs to the seat that set it
   if (seat === null) {
-    cancelDeal(); // leaving the table; stop any deal in progress
+    cancelTableAnim(); // leaving the table; stop any deal in progress
     render();
     return;
   }
@@ -296,6 +299,13 @@ const DEAL_MID_PAUSE_MS = 3000; // after all 5×4 cards, before the retourne
 let sweeping = false;
 let sweepToken = 0;
 const SWEEP_MS = 420; // time for the gathered trick to reach the winner
+
+// A player asking to show their annonces flashes the cards full-size across the
+// whole table for a moment, hiding every hand, then everything reverts. The
+// reveal is transient (not part of game state), so it can be requested again.
+let reveal: { seat: Seat; annonces: Annonce[] } | null = null;
+let revealTimer: number | null = null;
+const REVEAL_MS = 3000;
 
 /** Whether the round-summary box (and the hidden final trick) is now showing. */
 function summaryShown(): boolean {
@@ -415,6 +425,29 @@ function topPlay(s: GameState): TrickPlay | undefined {
   return trick[trick.length - 1];
 }
 
+/** A seat's header row: the player's name, with "(vous)" for your own seat. */
+function renderSeatHead(seat: Seat): HTMLElement {
+  const head = document.createElement("div");
+  head.className = "seat-head";
+  const name = document.createElement("span");
+  name.className = "name";
+  name.textContent = seat === mySeat ? `${PLAYERS[seat]} (vous)` : PLAYERS[seat];
+  head.appendChild(name);
+  return head;
+}
+
+/** One declaration drawn as its actual cards (a run reads low→high, a carré
+ *  shows its four suits), labelled for accessibility. */
+function renderAnnonceGroup(a: Annonce, trump: Suit | null): HTMLElement {
+  const group = document.createElement("div");
+  group.className = "annonce-group";
+  group.setAttribute("aria-label", annonceLabel(a));
+  for (const card of a.cards) {
+    group.appendChild(renderCard(card, { trump: card.suit === trump }));
+  }
+  return group;
+}
+
 function renderQuadrant(seat: Seat, s: GameState): HTMLElement {
   const mine = seat === mySeat;
   const bidding = s.phase === "bidding";
@@ -425,13 +458,7 @@ function renderQuadrant(seat: Seat, s: GameState): HTMLElement {
   if ((s.phase === "playing" || bidding) && s.turn === seat) classes.push("turn");
   q.className = classes.join(" ");
 
-  const head = document.createElement("div");
-  head.className = "seat-head";
-
-  const name = document.createElement("span");
-  name.className = "name";
-  name.textContent = mine ? `${PLAYERS[seat]} (vous)` : PLAYERS[seat];
-  head.appendChild(name);
+  const head = renderSeatHead(seat);
 
   if (bidding && s.opener === seat) {
     const badge = document.createElement("span");
@@ -503,27 +530,6 @@ function renderQuadrant(seat: Seat, s: GameState): HTMLElement {
   }
 
   q.append(head);
-
-  // Annonces this seat has revealed stay shown to the whole table for the rest
-  // of the hand, under the player's name.
-  const shown = s.shownAnnonces.find((a) => a.seat === seat);
-  if (shown) {
-    const ann = document.createElement("div");
-    ann.className = "shown-annonces";
-    // Show the actual cards of each declaration (a run reads low→high, a carré
-    // shows its four suits) so the annonce is plain to the whole table.
-    for (const a of shown.annonces) {
-      const group = document.createElement("div");
-      group.className = "annonce-group";
-      group.setAttribute("aria-label", annonceLabel(a));
-      for (const card of a.cards) {
-        group.appendChild(renderCard(card, { trump: card.suit === s.trump }));
-      }
-      ann.append(group);
-    }
-    q.append(ann);
-  }
-
   q.append(area);
 
   // The card this seat has played to the current trick, shown full-size in the
@@ -555,13 +561,12 @@ function renderQuadrant(seat: Seat, s: GameState): HTMLElement {
     q.appendChild(renderBidControls(s, seat));
   }
 
-  // During the second trick a player may reveal their annonces to the whole
-  // table — once, and only if they actually hold a declaration.
+  // During the second trick a player may flash their annonces to the whole
+  // table, as often as asked, as long as they actually hold a declaration.
   if (
     mine &&
     s.phase === "playing" &&
     s.tricks.length === 1 &&
-    !s.shownAnnonces.some((a) => a.seat === seat) &&
     detectAnnonces(s.hands[seat], seat).length > 0
   ) {
     const btn = document.createElement("button");
@@ -886,6 +891,15 @@ function render(): void {
     return;
   }
 
+  // A reveal flashes one seat's annonces full-size and hides every hand, so it
+  // takes over the whole table until its timer reverts it.
+  if (reveal) {
+    for (let seat = 0; seat < PLAYERS.length; seat++) {
+      table.appendChild(renderRevealQuadrant(seat as Seat, reveal));
+    }
+    return;
+  }
+
   for (let seat = 0; seat < PLAYERS.length; seat++) {
     table.appendChild(renderQuadrant(seat as Seat, state));
   }
@@ -914,14 +928,11 @@ const prefersReducedMotion = () =>
  * deal animates exactly once. Null outside bidding.
  */
 function dealSignature(s: GameState | null): string | null {
+  // The opener rotates every deal and the turned-up card is fixed for the whole
+  // of a deal's bidding, so this is stable within one deal yet differs for the
+  // next — without hashing all four hands.
   if (!s || s.phase !== "bidding") return null;
-  return (
-    cardKey(s.trumpCard) +
-    "|" +
-    s.opener +
-    "|" +
-    s.hands.map((h) => h.map(cardKey).join(",")).join(";")
-  );
+  return `${s.opener}|${cardKey(s.trumpCard)}`;
 }
 
 /**
@@ -939,13 +950,13 @@ function handleDeal(): void {
   // The deal we're animating is still the current one (e.g. another seat bid):
   // let the animation run on, ignoring the update.
   if (dealing && sig === animatedDealSig) return;
-  if (dealing) cancelDeal();
+  if (dealing) cancelTableAnim();
   render();
 }
 
 /** Begin (or restart) the deal animation, unless motion is reduced. */
 function startDeal(s: GameState): void {
-  cancelDeal();
+  cancelTableAnim();
   if (prefersReducedMotion()) {
     render();
     return;
@@ -955,12 +966,18 @@ function startDeal(s: GameState): void {
   void runDeal(s, token);
 }
 
-/** Abort any running deal or trick-sweep animation and clear its in-flight cards. */
-function cancelDeal(): void {
+/** Abort any running table animation (deal, trick-sweep, or annonce reveal) and
+ *  clear its in-flight cards and timers. */
+function cancelTableAnim(): void {
   dealToken++;
-  sweepToken++; // a deal supersedes any trick sweep still settling
+  sweepToken++;
   dealing = false;
   sweeping = false;
+  reveal = null;
+  if (revealTimer !== null) {
+    clearTimeout(revealTimer);
+    revealTimer = null;
+  }
   table.querySelectorAll(".dealing-card").forEach((el) => el.remove());
 }
 
@@ -1020,16 +1037,16 @@ async function runDeal(s: GameState, token: number): Promise<void> {
  */
 function settleHands(): void {
   for (let seat = 0; seat < PLAYERS.length; seat++) {
-    const q = table.querySelector<HTMLElement>("." + CORNERS[seat]);
+    const q = quadrantEl(seat as Seat);
     if (!q) continue;
     const spots = dealtSpots[seat] ?? [];
     const cards = q.querySelectorAll<HTMLElement>(".cards .card");
     cards.forEach((el, i) => {
-      const r = el.getBoundingClientRect();
       const from = spots[i] ?? spots[spots.length - 1];
       if (!from) return;
-      el.style.setProperty("--dx", `${from.x - (r.left + r.width / 2)}px`);
-      el.style.setProperty("--dy", `${from.y - (r.top + r.height / 2)}px`);
+      const c = rectCentre(el);
+      el.style.setProperty("--dx", `${from.x - c.x}px`);
+      el.style.setProperty("--dy", `${from.y - c.y}px`);
       el.classList.add("deal-settle");
       if (seat === mySeat) el.classList.add("reveal"); // your cards turn over
     });
@@ -1066,19 +1083,17 @@ function startSweep(): void {
     render();
     return;
   }
-  cancelDeal(); // never run a sweep and a deal at once
+  cancelTableAnim(); // never run a sweep and a deal at once
   const token = ++sweepToken;
   sweeping = true;
 
-  const wq = table.querySelector<HTMLElement>("." + CORNERS[winner])!;
-  const wr = wq.getBoundingClientRect();
-  const target = { x: (wr.left + wr.right) / 2, y: (wr.top + wr.bottom) / 2 };
+  const target = rectCentre(quadrantEl(winner)!);
   cards.forEach((el, i) => {
-    const r = el.getBoundingClientRect();
+    const c = rectCentre(el);
     el.classList.remove("deal-in"); // its play-in is done; don't fight the sweep
     el.classList.add("sweeping");
-    el.style.setProperty("--swx", `${target.x - (r.left + r.width / 2)}px`);
-    el.style.setProperty("--swy", `${target.y - (r.top + r.height / 2)}px`);
+    el.style.setProperty("--swx", `${target.x - c.x}px`);
+    el.style.setProperty("--swy", `${target.y - c.y}px`);
     el.style.setProperty("--swr", `${(i - 1.5) * 8}deg`);
   });
 
@@ -1089,10 +1104,50 @@ function startSweep(): void {
   }, SWEEP_MS);
 }
 
-/** The table centre, in the table's own coordinate space. */
-function tableCentre(): { x: number; y: number } {
-  const r = table.getBoundingClientRect();
-  return { x: r.width / 2, y: r.height / 2 };
+/**
+ * Flash a seat's annonces full-size across the whole table for REVEAL_MS, hiding
+ * every hand, then revert. The reveal is transient, so a later request simply
+ * replaces it (its timer reset). Only seated clients show it.
+ */
+function showReveal(r: { seat: Seat; annonces: Annonce[] }): void {
+  if (mySeat === null) return;
+  cancelTableAnim(); // clear any deal/sweep/reveal so this reveal owns the table
+  reveal = r;
+  render();
+  revealTimer = window.setTimeout(() => {
+    revealTimer = null;
+    reveal = null;
+    render(); // everything reverts to as it was before the button was pressed
+  }, REVEAL_MS);
+}
+
+/** One quadrant during a reveal: the seat's name, and — for the revealing seat
+ *  — its annonce cards full-size. Every hand is hidden. */
+function renderRevealQuadrant(seat: Seat, r: { seat: Seat; annonces: Annonce[] }): HTMLElement {
+  const q = document.createElement("div");
+  q.className = ["quadrant", CORNERS[seat], seat === mySeat ? "mine" : ""]
+    .filter(Boolean)
+    .join(" ");
+  q.appendChild(renderSeatHead(seat));
+
+  if (seat === r.seat) {
+    const wrap = document.createElement("div");
+    wrap.className = "reveal-annonces";
+    for (const a of r.annonces) wrap.appendChild(renderAnnonceGroup(a, state?.trump ?? null));
+    q.appendChild(wrap);
+  }
+  return q;
+}
+
+/** The centre of an element's bounding box, in viewport coordinates. */
+function rectCentre(el: Element): { x: number; y: number } {
+  const r = el.getBoundingClientRect();
+  return { x: (r.left + r.right) / 2, y: (r.top + r.bottom) / 2 };
+}
+
+/** The DOM element for a seat's quadrant, if it is on the table. */
+function quadrantEl(seat: Seat): HTMLElement | null {
+  return table.querySelector<HTMLElement>("." + CORNERS[seat]);
 }
 
 /** Fly one face-down card from the centre to its place in `seat`'s hand. */
@@ -1103,15 +1158,14 @@ function flyCard(seat: Seat, k: number): void {
   const cw = el.offsetWidth;
   const ch = el.offsetHeight;
   const tableRect = table.getBoundingClientRect();
-  const q = table.querySelector<HTMLElement>("." + CORNERS[seat])!;
-  const qr = q.getBoundingClientRect();
+  const qr = quadrantEl(seat)!.getBoundingClientRect();
   // Land near the seat's centre, fanned out by card index so five cards spread
   // like a hand rather than stacking on one spot.
   const tx = (qr.left + qr.right) / 2 - tableRect.left + (k - 2) * cw * 0.28;
   const ty = (qr.top + qr.bottom) / 2 - tableRect.top;
   // Remember where this card lands so the real hand can settle in from here.
   dealtSpots[seat][k] = { x: tableRect.left + tx, y: tableRect.top + ty };
-  const c = tableCentre();
+  const c = { x: tableRect.width / 2, y: tableRect.height / 2 };
   el.style.left = `${tx - cw / 2}px`;
   el.style.top = `${ty - ch / 2}px`;
   // Start stacked at the table centre, then ease out to the dealt spot. Both
@@ -1133,7 +1187,8 @@ function flyRetourne(s: GameState): void {
   table.appendChild(el);
   const cw = el.offsetWidth;
   const ch = el.offsetHeight;
-  const c = tableCentre();
+  const tableRect = table.getBoundingClientRect();
+  const c = { x: tableRect.width / 2, y: tableRect.height / 2 };
   el.style.left = `${c.x - cw / 2}px`;
   el.style.top = `${c.y - ch / 2}px`;
   el.style.opacity = "0";
