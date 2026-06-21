@@ -1,12 +1,8 @@
 # features to implement
 
-- dealing animation
-  - pause for a second or two with no cards
-  - then take a few seconds to deal the cards visually from the centre on a new deal
-- "show annonces" button should hide the annonces again after 5 seconds, or once all cards have been played in that round, whichever comes sooner
-- cards go to winner of previous trick animation
-  - when the winner of the last trick plays their next card, currently the cards from the previous trick instantly disappear
-  - instead first they should move in an animation to the player who won that trick
-  - after that the new card should be played
 - buttons are still hidden on some devices / screen resolutions
-
+- grammar wrong, e.g. tierce a roi
+- cards should be sorted by suit and arranged such that black suits are not next to each other, nor red suits, whenever possible
+- don't shuffle: keep cards in order of play, first all the ones won by one team, then all won by the other team, and cut, then deal without shuffling
+- instead of new game & clear points, have a single start new match button that resets the scores to zero and actually shuffles the cards
+- when someone hits 1k then they have won, show a new screen like the score screen but with the final scores only, and a button to start a new match

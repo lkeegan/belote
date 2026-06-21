@@ -1002,12 +1002,13 @@ async function runDeal(s: GameState, token: number): Promise<void> {
   await sleep(DEAL_START_PAUSE_MS);
   if (!alive()) return;
 
-  // Packets of three then two, dealt seat by seat — the same order the worker
-  // deals in (see OPENING_PACKETS in the worker's deck).
+  // Packets of three then two, dealt seat by seat — starting with the opener
+  // (who holds the "commence" badge and plays first) and going clockwise.
   const order: Seat[] = [];
   for (const packet of [3, 2]) {
-    for (let seat = 0; seat < PLAYERS.length; seat++) {
-      for (let c = 0; c < packet; c++) order.push(seat as Seat);
+    for (let i = 0; i < PLAYERS.length; i++) {
+      const seat = ((s.opener + i) % PLAYERS.length) as Seat;
+      for (let c = 0; c < packet; c++) order.push(seat);
     }
   }
   const dealt: [number, number, number, number] = [0, 0, 0, 0];
