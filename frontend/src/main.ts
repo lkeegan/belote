@@ -700,6 +700,47 @@ function renderRetourne(s: GameState): HTMLElement {
   return card;
 }
 
+/** The cumulative score a team must reach to win the match. */
+const WINNING_SCORE = 1000;
+
+/**
+ * The team that has won the match — reached the target score and is ahead — or
+ * null if neither has yet (a tie at the target leaves the match going).
+ */
+function matchWinner(s: GameState): 0 | 1 | null {
+  const [a, b] = s.scores;
+  if (Math.max(a, b) < WINNING_SCORE || a === b) return null;
+  return a > b ? 0 : 1;
+}
+
+/**
+ * The match-over screen, shown in place of the round summary once a team reaches
+ * the target: the winners, the final scores, and a button to start a new match.
+ */
+function renderWinBox(s: GameState, winner: 0 | 1): HTMLElement {
+  const box = document.createElement("div");
+  box.className = "result-box win-box";
+  box.innerHTML = `
+    <div class="result-heading">${TEAM_NAME[winner]} gagnent !</div>
+    <div class="result-sub">Partie terminée</div>
+    <div class="result-grid win-grid">
+      <span class="gold">${TEAM_NAME[0]}</span>
+      <span class="blue">${TEAM_NAME[1]}</span>
+      <span class="total">${s.scores[0]}</span>
+      <span class="total">${s.scores[1]}</span>
+    </div>
+  `;
+
+  const again = document.createElement("button");
+  again.type = "button";
+  again.className = "result-next";
+  again.textContent = "Nouvelle partie";
+  // The match is over, so start a fresh one straight away (no confirm needed).
+  again.addEventListener("click", () => send("/new-match", undefined));
+  box.appendChild(again);
+  return box;
+}
+
 /**
  * The round-summary box, shown in the middle of the table once the hand is
  * finished: a result heading, the points each team made this hand, the trump,
@@ -969,8 +1010,14 @@ function render(): void {
   if (state.phase === "bidding") table.appendChild(renderRetourne(state));
   // Once the hand is over, the centre shows the round-summary box instead —
   // after a brief pause that leaves the final trick on show (see syncSummary).
-  if (summaryShown() && state.result)
-    table.appendChild(renderResultBox(state));
+  // If that hand carried a team past the target, the match is won, so the
+  // final-scores screen takes its place.
+  if (summaryShown() && state.result) {
+    const winner = matchWinner(state);
+    table.appendChild(
+      winner !== null ? renderWinBox(state, winner) : renderResultBox(state),
+    );
+  }
 
   // Remember which cards are on the table so they don't re-animate next redraw.
   lastPlayed = new Set(shownTrick(state).map((p) => cardKey(p.card)));

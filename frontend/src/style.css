@@ -588,6 +588,13 @@ body {
   font-size: 1.1rem;
 }
 
+/* The match-over screen's final scoreboard: just the two teams and their
+   totals side by side, the totals divided off by the shared .total rule. */
+.win-grid {
+  grid-template-columns: 1fr 1fr;
+  margin-top: 0.2rem;
+}
+
 .result-next {
   margin-top: 1rem;
   font-size: 1rem;
