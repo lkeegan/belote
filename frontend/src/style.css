@@ -37,10 +37,16 @@ body {
 #app {
   display: flex;
   flex-direction: column;
-  /* Fill the visible viewport on every device with no scrolling. 100dvh
-     tracks mobile browser chrome; 100vh is the fallback for older engines. */
+  /* Fill the *always-visible* viewport with no scrolling. 100svh is the small
+     viewport height (toolbars shown), so the bottom row never slides under
+     Safari's landscape chrome the way 100vh/100dvh can on iPad — that occlusion
+     was hiding the bottom seats' bid / show-annonces / next-deal buttons. 100vh
+     is the fallback for engines without the new units. The safe-area insets keep
+     the bars and those controls clear of any notch and the home indicator. */
   height: 100vh;
-  height: 100dvh;
+  height: 100svh;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+    env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 
 /* --- Top bar --- */
