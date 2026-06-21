@@ -140,12 +140,39 @@ function renderBack(): HTMLElement {
 }
 
 /** Sort a hand by suit, then by rank within each suit, for tidy display. */
+// The suits of each colour, in a stable canonical order.
+const RED_SUITS = SUITS.filter(isRed);
+const BLACK_SUITS = SUITS.filter((s) => !isRed(s));
+
+/**
+ * The order to lay a hand's suits out so that, where possible, no two
+ * neighbouring suits share a colour: interleave the reds and blacks the hand
+ * holds, starting with the larger colour group so the smaller one slots between
+ * it. Same-colour neighbours remain only when one colour outnumbers the other
+ * by more than one (e.g. a hand of two red suits and no black).
+ */
+function suitOrder(cards: Card[]): Suit[] {
+  const present = (group: readonly Suit[]) =>
+    group.filter((s) => cards.some((c) => c.suit === s));
+  const reds = present(RED_SUITS);
+  const blacks = present(BLACK_SUITS);
+  const [first, second] =
+    reds.length >= blacks.length ? [reds, blacks] : [blacks, reds];
+  const order: Suit[] = [];
+  for (let i = 0; i < first.length; i++) {
+    order.push(first[i]);
+    if (i < second.length) order.push(second[i]);
+  }
+  return order;
+}
+
 function sortHand(cards: Card[]): Card[] {
+  const order = suitOrder(cards);
   return cards
     .slice()
     .sort(
       (a, b) =>
-        SUITS.indexOf(a.suit) - SUITS.indexOf(b.suit) ||
+        order.indexOf(a.suit) - order.indexOf(b.suit) ||
         RANKS.indexOf(a.rank) - RANKS.indexOf(b.rank),
     );
 }
