@@ -77,13 +77,12 @@ export interface BeloteDeal {
 }
 
 /**
- * Perform a Belote opening deal from a 32-card deck shuffled with `rng`: deal
- * the 3-then-2 packets to each of the four players, turn one card face up to
- * propose trump, and leave the rest as the talon. Defaults to a random deal;
- * pass a seeded `makeRng` to get a deterministic one (used in tests).
+ * Deal a Belote opening from an already-ordered 32-card `deck`, without shuffling:
+ * deal the 3-then-2 packets to each of the four players, turn one card face up to
+ * propose trump, and leave the rest as the talon. Used to deal the gathered pack
+ * after a cut, the way a real game does between hands.
  */
-export function dealBelote(rng: Rng = Math.random): BeloteDeal {
-  const deck = shuffle(createDeck(), rng);
+export function dealBeloteFromDeck(deck: readonly Card[]): BeloteDeal {
   const hands: Card[][] = Array.from({ length: BELOTE_PLAYERS }, () => []);
 
   let next = 0;
@@ -98,6 +97,27 @@ export function dealBelote(rng: Rng = Math.random): BeloteDeal {
   const trumpCard = deck[next++];
   const talon = deck.slice(next);
   return { hands, trumpCard, talon };
+}
+
+/**
+ * Perform a Belote opening deal from a freshly shuffled 32-card deck. Defaults to
+ * a random shuffle; pass a seeded `makeRng` to get a deterministic one (used in
+ * tests). Only the first deal of a session shuffles — later hands gather and cut.
+ */
+export function dealBelote(rng: Rng = Math.random): BeloteDeal {
+  return dealBeloteFromDeck(shuffle(createDeck(), rng));
+}
+
+/**
+ * Cut a deck once, the way a player does before the deal: lift a chunk off the
+ * top and put it underneath. The cut point is anywhere but the very ends, so the
+ * order is never left untouched. No cards are added, removed, or reordered
+ * within the two chunks.
+ */
+export function cut(deck: readonly Card[], rng: Rng = Math.random): Card[] {
+  if (deck.length < 2) return deck.slice();
+  const p = 1 + Math.floor(rng() * (deck.length - 1));
+  return [...deck.slice(p), ...deck.slice(0, p)];
 }
 
 // After a take, the taker keeps the turned card and draws two more; everyone

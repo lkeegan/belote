@@ -10,7 +10,9 @@ import {
   type Rng,
   type Suit,
   SUITS,
+  cut,
   dealBelote,
+  dealBeloteFromDeck,
   completeDeal,
 } from "./deck";
 import {
@@ -75,15 +77,14 @@ export type ReduceResult =
 
 const TRICKS_PER_HAND = 8;
 
-/** Deal a fresh random hand opened by `opener` and enter the bidding phase. */
-export function createGame(opener: Seat, rng: Rng = Math.random): GameState {
-  const { hands, trumpCard, talon } = dealBelote(rng);
+/** A fresh bidding-phase state for `opener` from an opening deal. */
+function gameFromDeal(opener: Seat, deal: BeloteDeal): GameState {
   return {
     phase: "bidding",
     opener,
-    hands,
-    trumpCard,
-    talon,
+    hands: deal.hands,
+    trumpCard: deal.trumpCard,
+    talon: deal.talon,
     trump: null,
     taker: null,
     turn: opener,
@@ -95,6 +96,11 @@ export function createGame(opener: Seat, rng: Rng = Math.random): GameState {
   };
 }
 
+/** Deal a fresh shuffled hand opened by `opener` and enter the bidding phase. */
+export function createGame(opener: Seat, rng: Rng = Math.random): GameState {
+  return gameFromDeal(opener, dealBelote(rng));
+}
+
 function isSeat(value: unknown): value is Seat {
   return value === 0 || value === 1 || value === 2 || value === 3;
 }
@@ -103,9 +109,32 @@ function err(message: string): ReduceResult {
   return { ok: false, error: message };
 }
 
-/** Deal the next hand: rotate the opener one seat clockwise, keep the scores. */
+/**
+ * Gather the previous hand's 32 cards the way players do at the table, with no
+ * shuffle: when the hand played out, stack each team's won tricks together (one
+ * team's, then the other's), cards in the order they were played. If the hand
+ * never played (everyone passed the bidding), gather the cards as they lie — the
+ * four hands, then the retourne and the talon.
+ */
+export function gatherDeck(prev: GameState): Card[] {
+  if (prev.tricks.length === TRICKS_PER_HAND) {
+    const piles: [Card[], Card[]] = [[], []];
+    for (const trick of prev.tricks) {
+      for (const { card } of trick.cards) piles[trick.winner % 2].push(card);
+    }
+    return [...piles[0], ...piles[1]];
+  }
+  return [...prev.hands.flat(), prev.trumpCard, ...prev.talon];
+}
+
+/**
+ * Deal the next hand: rotate the opener one seat clockwise and keep the scores.
+ * The pack is not reshuffled — it is gathered from the previous hand and cut,
+ * then dealt as-is, mirroring play at a real table.
+ */
 function dealNext(prev: GameState, rng: Rng): GameState {
-  const game = createGame(nextSeat(prev.opener), rng);
+  const deck = cut(gatherDeck(prev), rng);
+  const game = gameFromDeal(nextSeat(prev.opener), dealBeloteFromDeck(deck));
   game.scores = [...prev.scores];
   return game;
 }

@@ -1,10 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { type Card, type Suit, SUITS, makeRng } from "./deck";
+import { type Card, type Suit, SUITS, RANKS, makeRng } from "./deck";
 import { type Seat, legalMoves, nextSeat } from "./rules";
 import {
   type GameState,
   annoncesToReveal,
   createGame,
+  gatherDeck,
   reduce,
   replaceOptions,
 } from "./state";
@@ -479,6 +480,59 @@ describe("reduce — a full hand", () => {
       card: { suit: "hearts", rank: "7" },
     });
     expect(r.ok).toBe(false);
+  });
+});
+
+describe("dealNext — gather and cut without reshuffling", () => {
+  // A stable ordering, so two decks can be compared as multisets.
+  const sortCards = (cards: Card[]) =>
+    cards
+      .slice()
+      .sort(
+        (a, b) =>
+          SUITS.indexOf(a.suit) - SUITS.indexOf(b.suit) ||
+          RANKS.indexOf(a.rank) - RANKS.indexOf(b.rank),
+      );
+
+  // The 32 cards in the order they were dealt, reconstructed from a bidding-
+  // phase state (3-then-2 packets per player, then the retourne and talon).
+  const deckInDealOrder = (s: GameState): Card[] => {
+    const deck: Card[] = [];
+    for (let p = 0; p < 4; p++) deck.push(...s.hands[p].slice(0, 3));
+    for (let p = 0; p < 4; p++) deck.push(...s.hands[p].slice(3, 5));
+    deck.push(s.trumpCard, ...s.talon);
+    return deck;
+  };
+
+  it("gathers a finished hand into team piles in play order", () => {
+    const finished = playToFinish(takeGame("13"));
+    const piles: [Card[], Card[]] = [[], []];
+    for (const t of finished.tricks)
+      for (const { card } of t.cards) piles[t.winner % 2].push(card);
+    expect(gatherDeck(finished)).toEqual([...piles[0], ...piles[1]]);
+  });
+
+  it("deals the next hand from the very same 32 cards", () => {
+    const finished = playToFinish(takeGame("13"));
+    const next = reduce(finished, { type: "new" });
+    expect(next.ok).toBe(true);
+    if (!next.ok) return;
+    expect(sortCards(deckInDealOrder(next.state))).toEqual(
+      sortCards(gatherDeck(finished)),
+    );
+  });
+
+  it("only cuts the gathered pack: the next deal is a rotation of it", () => {
+    const finished = playToFinish(takeGame("13"));
+    const gathered = gatherDeck(finished);
+    // rng → 0 cuts a single card from the top to the bottom.
+    const next = reduce(finished, { type: "new" }, () => 0);
+    expect(next.ok).toBe(true);
+    if (!next.ok) return;
+    expect(deckInDealOrder(next.state)).toEqual([
+      ...gathered.slice(1),
+      gathered[0],
+    ]);
   });
 });
 
