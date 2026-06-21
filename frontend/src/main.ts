@@ -49,6 +49,31 @@ const RANK_NAME: Record<Rank, string> = {
   A: "as",
 };
 
+// A sequence is named by its top card with the correctly contracted article:
+// "au roi", "à la dame", "à l'as" (à + le → au, à + la, à + l').
+const RANK_A: Record<Rank, string> = {
+  "7": "au 7",
+  "8": "au 8",
+  "9": "au 9",
+  "10": "au 10",
+  J: "au valet",
+  Q: "à la dame",
+  K: "au roi",
+  A: "à l'as",
+};
+
+// A carré is named by its rank in the plural: "de valets", "de rois", "d'as".
+const RANK_PLURAL: Record<Rank, string> = {
+  "7": "de 7",
+  "8": "de 8",
+  "9": "de 9",
+  "10": "de 10",
+  J: "de valets",
+  Q: "de dames",
+  K: "de rois",
+  A: "d'as",
+};
+
 function isRed(suit: Suit): boolean {
   return suit === "hearts" || suit === "diamonds";
 }
@@ -786,18 +811,18 @@ const ANNONCE_NAME: Record<AnnonceKind, string> = {
   carre: "Carré",
 };
 
-/** One annonce as text: "Carré de V" or "Tierce à R ♠". */
+/** One annonce as text: "Carré de valets" or "Tierce au roi ♠". */
 function annonceHtml(a: Annonce): string {
-  if (a.kind === "carre") return `Carré de ${RANK_LABEL[a.rank]}`;
+  if (a.kind === "carre") return `Carré ${RANK_PLURAL[a.rank]}`;
   const suit = a.suit ? ` ${suitHtml(a.suit)}` : "";
-  return `${ANNONCE_NAME[a.kind]} à ${RANK_LABEL[a.rank]}${suit}`;
+  return `${ANNONCE_NAME[a.kind]} ${RANK_A[a.rank]}${suit}`;
 }
 
 /** A plain-text accessibility label for a revealed annonce. */
 function annonceLabel(a: Annonce): string {
-  if (a.kind === "carre") return `Carré de ${RANK_NAME[a.rank]}`;
+  if (a.kind === "carre") return `Carré ${RANK_PLURAL[a.rank]}`;
   const suit = a.suit ? ` de ${SUIT_NAME[a.suit]}` : "";
-  return `${ANNONCE_NAME[a.kind]} à ${RANK_NAME[a.rank]}${suit}`;
+  return `${ANNONCE_NAME[a.kind]} ${RANK_A[a.rank]}${suit}`;
 }
 
 /** The annonces clause for the finished-hand line, or "" if there were none. */
