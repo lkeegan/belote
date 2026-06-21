@@ -113,9 +113,14 @@ function err(message: string): ReduceResult {
 /**
  * Gather the previous hand's 32 cards the way players do at the table, with no
  * shuffle: when the hand played out, stack each team's won tricks together (one
- * team's, then the other's), cards in the order they were played. If the hand
- * never played (everyone passed the bidding), gather the cards as they lie — the
- * four hands, then the retourne and the talon.
+ * team's, then the other's), cards in the order they were played.
+ *
+ * Otherwise gather every card from wherever it currently sits, conserving all
+ * 32: the cards still in hands, plus any already played to tricks, plus — only
+ * while no one has taken (so the retourne and talon are still undealt) — the
+ * retourne and the talon. (Once someone takes, `completeDeal` has dealt those
+ * into the hands and emptied the talon.) This covers an everyone-passed bidding
+ * as well as a hand abandoned mid-play, without duplicating or dropping a card.
  */
 export function gatherDeck(prev: GameState): Card[] {
   if (prev.tricks.length === TRICKS_PER_HAND) {
@@ -125,7 +130,12 @@ export function gatherDeck(prev: GameState): Card[] {
     }
     return [...piles[0], ...piles[1]];
   }
-  return [...prev.hands.flat(), prev.trumpCard, ...prev.talon];
+  const played = [
+    ...prev.tricks.flatMap((t) => t.cards.map((p) => p.card)),
+    ...prev.currentTrick.map((p) => p.card),
+  ];
+  const undealt = prev.trump === null ? [prev.trumpCard, ...prev.talon] : [];
+  return [...prev.hands.flat(), ...played, ...undealt];
 }
 
 /**

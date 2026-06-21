@@ -982,6 +982,10 @@ function dealSignature(s: GameState | null): string | null {
  */
 function handleDeal(): void {
   const sig = dealSignature(state);
+  // Once the game leaves bidding, forget the last animated signature so the next
+  // deal always animates — even a new match that happens to deal the same opener
+  // and retourne as the previous one.
+  if (sig === null) animatedDealSig = null;
   if (sig && sig !== animatedDealSig && mySeat !== null) {
     animatedDealSig = sig;
     startDeal(state!);

@@ -34,8 +34,10 @@ function toClientState(state: GameState): ClientState {
   const legal = playing
     ? legalMoves(state.hands[state.turn], state.currentTrick, state.trump!, state.turn)
     : [];
+  // Annonces may only be shown on the second trick (matches annoncesToReveal).
+  const showWindow = playing && state.tricks.length === 1;
   const canShowAnnonces = state.hands.map((hand, seat) =>
-    playing ? handAnnonces(hand, seat as Seat, state.trump!).length > 0 : false,
+    showWindow ? handAnnonces(hand, seat as Seat, state.trump!).length > 0 : false,
   );
   const { talon, ...rest } = state; // talon is server-only; never sent
   return { ...rest, legal, replaceLegal: replaceOptions(state), canShowAnnonces };
@@ -161,7 +163,14 @@ export class BeloteGame extends DurableObject<Env> {
    */
   private broadcast(payload: unknown): void {
     const text = JSON.stringify(payload);
-    for (const ws of this.ctx.getWebSockets()) ws.send(text);
+    for (const ws of this.ctx.getWebSockets()) {
+      // A socket caught mid-close can throw; don't let it starve the rest.
+      try {
+        ws.send(text);
+      } catch {
+        // The runtime drops it from getWebSockets() once the close completes.
+      }
+    }
   }
 }
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { type Card, type Suit, SUITS, RANKS, makeRng } from "./deck";
+import { type Card, type Suit, SUITS, RANKS, createDeck, makeRng } from "./deck";
 import { type Seat, legalMoves, nextSeat } from "./rules";
 import {
   type GameState,
@@ -537,6 +537,29 @@ describe("dealNext — gather and cut without reshuffling", () => {
       ...gathered.slice(1),
       gathered[0],
     ]);
+  });
+
+  it("conserves all 32 cards when a hand is abandoned after the take", () => {
+    const full = sortCards(createDeck());
+    // Right after the take: trump dealt into a hand, talon emptied.
+    const taken = takeGame("13");
+    expect(sortCards(gatherDeck(taken))).toEqual(full);
+
+    // And partway through play, with cards spread across tricks and hands.
+    let s = taken;
+    for (let i = 0; i < 5; i++) {
+      const legal = legalMoves(s.hands[s.turn], s.currentTrick, s.trump!, s.turn);
+      const r = reduce(s, { type: "play", seat: s.turn, card: legal[0] });
+      if (!r.ok) throw new Error(r.error);
+      s = r.state;
+    }
+    expect(sortCards(gatherDeck(s))).toEqual(full);
+
+    // So dealing the next hand from here still produces a valid 32-card deck.
+    const next = reduce(s, { type: "new" });
+    expect(next.ok).toBe(true);
+    if (!next.ok) return;
+    expect(sortCards(deckInDealOrder(next.state))).toEqual(full);
   });
 });
 
