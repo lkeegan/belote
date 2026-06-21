@@ -102,7 +102,7 @@ export function createGame(opener: Seat, rng: Rng = Math.random): GameState {
   return gameFromDeal(opener, dealBelote(rng));
 }
 
-function isSeat(value: unknown): value is Seat {
+export function isSeat(value: unknown): value is Seat {
   return value === 0 || value === 1 || value === 2 || value === 3;
 }
 
@@ -210,12 +210,8 @@ function bid(
   if (state.biddingRound === 2 && suit === state.trumpCard.suit)
     return err("second round must name a different suit");
 
-  const deal: BeloteDeal = {
-    hands: state.hands,
-    trumpCard: state.trumpCard,
-    talon: state.talon,
-  };
-  const hands = completeDeal(deal, seat);
+  // The state already carries the deal's hands, retourne, and talon.
+  const hands = completeDeal(state, seat);
   return {
     ok: true,
     state: {

@@ -1,31 +1,44 @@
 import { DurableObject } from "cloudflare:workers";
 import { type Card } from "./game/deck";
-import { legalMoves } from "./game/rules";
+import { type Seat, legalMoves } from "./game/rules";
+import { handAnnonces } from "./game/scoring";
 import {
   type Action,
   type GameState,
   type ReduceResult,
   annoncesToReveal,
+  isSeat,
   reduce,
   replaceOptions,
 } from "./game/state";
 
 /**
- * State as sent to clients: the game, the current turn's legal cards, and the
- * cards the last player may swap their move for (when a take-back is available).
+ * State as sent to clients: the game (minus the face-down talon, which the
+ * client never uses), the current turn's legal cards, the cards the last player
+ * may swap their move for, and which seats hold a declaration they could show.
  */
-type ClientState = GameState & { legal: Card[]; replaceLegal: Card[] };
+type ClientState = Omit<GameState, "talon"> & {
+  legal: Card[];
+  replaceLegal: Card[];
+  canShowAnnonces: boolean[];
+};
 
 /**
- * Attach the cards the current turn may legally play, derived from the rules
- * engine so the frontend can highlight them without duplicating the rules.
+ * Derive the view facts the client would otherwise have to re-implement the
+ * rules to compute: the current turn's legal moves, the take-back's legal
+ * replacements, and a per-seat flag for "holds an annonce to show" — so the
+ * frontend never duplicates the legality or annonce-detection rules.
  */
 function toClientState(state: GameState): ClientState {
-  const legal =
-    state.phase === "playing" && state.trump
-      ? legalMoves(state.hands[state.turn], state.currentTrick, state.trump, state.turn)
-      : [];
-  return { ...state, legal, replaceLegal: replaceOptions(state) };
+  const playing = state.phase === "playing" && state.trump !== null;
+  const legal = playing
+    ? legalMoves(state.hands[state.turn], state.currentTrick, state.trump!, state.turn)
+    : [];
+  const canShowAnnonces = state.hands.map((hand, seat) =>
+    playing ? handAnnonces(hand, seat as Seat, state.trump!).length > 0 : false,
+  );
+  const { talon, ...rest } = state; // talon is server-only; never sent
+  return { ...rest, legal, replaceLegal: replaceOptions(state), canShowAnnonces };
 }
 
 // There is one global Belote game, so every request goes to a single named
@@ -176,8 +189,8 @@ function originAllowed(request: Request, env: Env): boolean {
 }
 
 /** A seat index 0–3, if `value` is one. */
-function asSeat(value: unknown): 0 | 1 | 2 | 3 | null {
-  return value === 0 || value === 1 || value === 2 || value === 3 ? value : null;
+function asSeat(value: unknown): Seat | null {
+  return isSeat(value) ? value : null;
 }
 
 /** Parse a POST body into an Action, or return an error message. */

@@ -79,6 +79,9 @@ function isRed(suit: Suit): boolean {
 }
 
 const cardKey = (c: Card) => `${c.rank}${c.suit}`;
+const sameCard = (a: Card, b: Card) => cardKey(a) === cardKey(b);
+const includesCard = (cards: Card[], card: Card) =>
+  cards.some((c) => sameCard(c, card));
 
 interface CardOptions {
   trump?: boolean;
@@ -223,6 +226,8 @@ interface GameState {
   legal: Card[];
   /** Cards the last player may swap their played card for (empty if none). */
   replaceLegal: Card[];
+  /** Per seat: whether that hand holds a declaration it could show. */
+  canShowAnnonces: boolean[];
 }
 
 // Base URL of the Cloudflare Worker. Defaults to the local `wrangler dev`
@@ -411,7 +416,7 @@ const showAnnonces = (seat: Seat) => send("/show-annonces", { seat });
 
 /** Queue (or, if already queued, cancel) a card as a pre-move. */
 function togglePremove(card: Card): void {
-  premove = premove && cardKey(premove) === cardKey(card) ? null : card;
+  premove = premove && sameCard(premove, card) ? null : card;
   render();
 }
 
@@ -426,14 +431,14 @@ function syncPremove(): void {
     premove = null;
     return;
   }
-  const held = state.hands[mySeat].some((c) => cardKey(c) === cardKey(premove!));
+  const held = includesCard(state.hands[mySeat], premove);
   if (!held) {
     premove = null;
     return;
   }
   if (state.turn === mySeat) {
     const card = premove;
-    const legal = state.legal.some((c) => cardKey(c) === cardKey(card));
+    const legal = includesCard(state.legal, card);
     premove = null;
     if (legal) play(mySeat, card);
   }
@@ -496,6 +501,14 @@ function renderSeatHead(seat: Seat): HTMLElement {
   return head;
 }
 
+/** Append a small labelled status tag (commence / passe / A pris) to a header. */
+function headTag(head: HTMLElement, className: string, text: string): void {
+  const tag = document.createElement("span");
+  tag.className = className;
+  tag.textContent = text;
+  head.appendChild(tag);
+}
+
 /** One declaration drawn as its actual cards (a run reads low→high, a carré
  *  shows its four suits), labelled for accessibility. */
 function renderAnnonceGroup(a: Annonce, trump: Suit | null): HTMLElement {
@@ -520,24 +533,13 @@ function renderQuadrant(seat: Seat, s: GameState): HTMLElement {
 
   const head = renderSeatHead(seat);
 
-  if (bidding && s.opener === seat) {
-    const badge = document.createElement("span");
-    badge.className = "starter-badge";
-    badge.textContent = "commence";
-    head.appendChild(badge);
-  }
+  if (bidding && s.opener === seat) headTag(head, "starter-badge", "commence");
 
   // Seats earlier in the order than the current bidder have passed this round.
   if (bidding && ((seat - s.opener + 4) % 4) < s.passes) {
-    const tag = document.createElement("span");
-    tag.className = "pass-tag";
-    tag.textContent = "passe";
-    head.appendChild(tag);
+    headTag(head, "pass-tag", "passe");
   } else if (!bidding && s.taker === seat) {
-    const tag = document.createElement("span");
-    tag.className = "take active";
-    tag.textContent = "A pris";
-    head.appendChild(tag);
+    headTag(head, "take active", "A pris");
   }
 
   const area = document.createElement("div");
@@ -565,7 +567,7 @@ function renderQuadrant(seat: Seat, s: GameState): HTMLElement {
     for (const card of sortHand(s.hands[seat])) {
       const playable = interactive && legalKeys.has(cardKey(card));
       const illegal = interactive && !legalKeys.has(cardKey(card));
-      const premoved = canPremove && premove !== null && cardKey(premove) === cardKey(card);
+      const premoved = canPremove && premove !== null && sameCard(premove, card);
       cards.appendChild(
         renderCard(card, {
           trump: card.suit === s.trump,
@@ -623,12 +625,7 @@ function renderQuadrant(seat: Seat, s: GameState): HTMLElement {
 
   // During the second trick a player may flash their annonces to the whole
   // table, as often as asked, as long as they actually hold a declaration.
-  if (
-    mine &&
-    s.phase === "playing" &&
-    s.tricks.length === 1 &&
-    detectAnnonces(s.hands[seat], seat).length > 0
-  ) {
+  if (mine && s.phase === "playing" && s.tricks.length === 1 && s.canShowAnnonces[seat]) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "show-annonces";
@@ -811,74 +808,6 @@ function suitHtml(suit: Suit): string {
 }
 
 const TEAM_NAME = ["Séb·Liam", "Maya·Dadmor"];
-// Carré (four of a kind) values; 7s and 8s don't count toward an annonce.
-const CARRE_POINTS: Partial<Record<Rank, number>> = {
-  J: 200,
-  "9": 150,
-  A: 100,
-  K: 100,
-  Q: 100,
-  "10": 100,
-};
-
-/** Sequence value by length: tierce 20, cinquante 50, cent (5+) 100. */
-function sequencePoints(length: number): number {
-  if (length >= 5) return 100;
-  if (length === 4) return 50;
-  if (length === 3) return 20;
-  return 0;
-}
-
-/**
- * The annonces in one hand: carrés (four of a counting rank) and the maximal
- * runs of three or more consecutive cards in a suit. Mirrors the worker's
- * scorer, just enough for the client to know when to offer "Montrer". The
- * authoritative award is still the worker's at the end of the hand.
- */
-function detectAnnonces(hand: Card[], seat: Seat): Annonce[] {
-  const team = (seat % 2) as 0 | 1;
-  const found: Annonce[] = [];
-
-  const counts = new Map<Rank, number>();
-  for (const card of hand) counts.set(card.rank, (counts.get(card.rank) ?? 0) + 1);
-  for (const [rank, count] of counts) {
-    const points = CARRE_POINTS[rank];
-    if (count === 4 && points) {
-      const cards = hand
-        .filter((c) => c.rank === rank)
-        .sort((a, b) => SUITS.indexOf(a.suit) - SUITS.indexOf(b.suit));
-      found.push({ team, kind: "carre", rank, points, cards });
-    }
-  }
-
-  for (const suit of SUITS) {
-    const suitCards = hand
-      .filter((c) => c.suit === suit)
-      .sort((a, b) => RANKS.indexOf(a.rank) - RANKS.indexOf(b.rank));
-    let start = 0;
-    for (let i = 1; i <= suitCards.length; i++) {
-      const consecutive =
-        i < suitCards.length &&
-        RANKS.indexOf(suitCards[i].rank) === RANKS.indexOf(suitCards[i - 1].rank) + 1;
-      if (!consecutive) {
-        const run = suitCards.slice(start, i);
-        if (run.length >= 3) {
-          found.push({
-            team,
-            kind: run.length >= 5 ? "cent" : run.length === 4 ? "cinquante" : "tierce",
-            rank: run[run.length - 1].rank,
-            suit,
-            points: sequencePoints(run.length),
-            cards: run,
-          });
-        }
-        start = i;
-      }
-    }
-  }
-
-  return found;
-}
 
 const ANNONCE_NAME: Record<AnnonceKind, string> = {
   tierce: "Tierce",
@@ -887,19 +816,22 @@ const ANNONCE_NAME: Record<AnnonceKind, string> = {
   carre: "Carré",
 };
 
-/** One annonce as text: "Carré de valets" or "Tierce au roi ♠". */
-function annonceHtml(a: Annonce): string {
+/**
+ * One annonce as text: "Carré de valets" or "Tierce au roi ♠". `suitText`
+ * formats the trailing suit (a carré has none), differing only in HTML symbol
+ * vs spoken French.
+ */
+function annonceText(a: Annonce, suitText: (s: Suit) => string): string {
   if (a.kind === "carre") return `Carré ${RANK_PLURAL[a.rank]}`;
-  const suit = a.suit ? ` ${suitHtml(a.suit)}` : "";
+  const suit = a.suit ? ` ${suitText(a.suit)}` : "";
   return `${ANNONCE_NAME[a.kind]} ${RANK_A[a.rank]}${suit}`;
 }
 
-/** A plain-text accessibility label for a revealed annonce. */
-function annonceLabel(a: Annonce): string {
-  if (a.kind === "carre") return `Carré ${RANK_PLURAL[a.rank]}`;
-  const suit = a.suit ? ` de ${SUIT_NAME[a.suit]}` : "";
-  return `${ANNONCE_NAME[a.kind]} ${RANK_A[a.rank]}${suit}`;
-}
+/** An annonce with its suit as a coloured symbol, for on-table display. */
+const annonceHtml = (a: Annonce) => annonceText(a, suitHtml);
+
+/** An annonce with its suit spoken in French, for accessibility labels. */
+const annonceLabel = (a: Annonce) => annonceText(a, (s) => `de ${SUIT_NAME[s]}`);
 
 /** The annonces clause for the finished-hand line, or "" if there were none. */
 function annoncesHtml(r: HandResult): string {
