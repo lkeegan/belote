@@ -1,9 +1,11 @@
 import { SELF, env, runInDurableObject } from "cloudflare:test";
 import { afterEach, beforeEach, describe, it, expect } from "vitest";
 import { legalMoves } from "./game/rules";
-import { type GameState } from "./game/state";
+import { createGame, reduce } from "./game/state";
+import { makeRng } from "./game/deck";
+import { handAnnonces } from "./game/scoring";
+import type { ClientState as GameState, ClientState } from "../../shared/protocol";
 
-type ClientState = GameState & { legal: unknown[] };
 type Message = ClientState | { error: string };
 
 const BASE = "https://belote.test";
@@ -43,6 +45,7 @@ interface Client {
   next(): Promise<Message>;
   /** Send an action, exactly as the frontend does. */
   send(path: string, body?: unknown): void;
+  raw(message: string): void;
   close(): void;
 }
 
@@ -59,10 +62,12 @@ async function connect(
 
   // Buffer messages and hand them out one at a time. Register the listener
   // before accepting so the initial state the worker sends on connect is kept.
+  let dealId = 0;
   const queue: Message[] = [];
   const waiters: ((m: Message) => void)[] = [];
   ws.addEventListener("message", (e) => {
     const data = JSON.parse(e.data as string) as Message;
+    if ("dealId" in data) dealId = data.dealId;
     const waiter = waiters.shift();
     if (waiter) waiter(data);
     else queue.push(data);
@@ -80,7 +85,10 @@ async function connect(
           resolve(m);
         });
       }),
-    send: (path, body) => ws.send(JSON.stringify({ path, body })),
+    send: (path, body) => ws.send(JSON.stringify({
+      path, body: path === "/new" || path === "/new-match" ? { dealId, ...body as object } : body,
+    })),
+    raw: (message) => ws.send(message),
     close: () => ws.close(),
   };
   // The worker pushes the current state (or "no game") as soon as it accepts;
@@ -219,5 +227,74 @@ describe("WebSocket layer", () => {
 
     client!.send("/nope", {});
     expect(await client!.next()).toEqual({ error: "not found" });
+  });
+});
+
+describe("WebSocket regressions", () => {
+  it.each(["null", "[]", "true", "42", '"text"', "{", '{"path":{"toString":null}}'])("rejects malformed envelope %s and keeps the connection usable", async (message) => {
+    const { client } = await connect();
+    client!.raw(message);
+    expect(await client!.next()).toEqual({ error: "invalid message" });
+    client!.send("/new");
+    expect(await client!.next()).toMatchObject({ phase: "bidding" });
+  });
+
+  it.each(["/new", "/new-match"])("rejects stale %s requests from another client", async (path) => {
+    const { client: a, initial } = await connect();
+    const { client: b } = await connect();
+    const dealId = (initial as ClientState).dealId;
+    a!.send(path, { dealId });
+    b!.send(path, { dealId });
+    const advanced = await a!.next() as ClientState;
+    const replies = [await b!.next(), await b!.next()];
+    expect(replies).toContainEqual({ error: "stale deal" });
+    expect(advanced.dealId).toBe(dealId + 1);
+    const { initial: stored } = await connect();
+    expect(stored).toEqual(advanced);
+  });
+
+  it("requires a deal ID for deal-changing requests", async () => {
+    const { client } = await connect();
+    client!.raw(JSON.stringify({ path: "/new" }));
+    expect(await client!.next()).toEqual({ error: "dealId must be a non-negative integer" });
+  });
+
+  it("loads games saved before deal IDs existed without redealing", async () => {
+    const saved = createGame(2, makeRng("legacy"));
+    const { dealId, ...legacy } = saved;
+    const stub = env.BELOTE_GAME.getByName(GAME_NAME);
+    await runInDurableObject(stub, async (instance, context) => {
+      await context.storage.put("state", legacy);
+      Reflect.set(instance, "cached", undefined);
+    });
+    const { client, initial } = await connect();
+    expect(initial).toMatchObject({ dealId: 0, opener: 2, hands: saved.hands });
+    client!.send("/new");
+    expect(await client!.next()).toMatchObject({ dealId: 1, opener: 3 });
+  });
+
+  it("advertises and broadcasts original annonces after some cards were played", async () => {
+    let saved = createGame(0, makeRng("1"));
+    const taken = reduce(saved, { type: "bid", seat: 0, suit: saved.trumpCard.suit });
+    if (!taken.ok) throw new Error(taken.error);
+    saved = taken.state;
+    const annonces = handAnnonces(saved.hands[0], 0, saved.trump!);
+    expect(annonces).toHaveLength(1);
+    for (let i = 0; i < 4; i++) {
+      const card = i === 0 ? annonces[0].cards[0]
+        : legalMoves(saved.hands[saved.turn], saved.currentTrick, saved.trump!, saved.turn)[0];
+      const played = reduce(saved, { type: "play", seat: saved.turn, card });
+      if (!played.ok) throw new Error(played.error);
+      saved = played.state;
+    }
+    const stub = env.BELOTE_GAME.getByName(GAME_NAME);
+    await runInDurableObject(stub, async (instance, context) => {
+      await context.storage.put("state", saved);
+      Reflect.set(instance, "cached", undefined);
+    });
+    const { client, initial } = await connect();
+    expect((initial as ClientState).canShowAnnonces[0]).toBe(true);
+    client!.send("/show-annonces", { seat: 0 });
+    expect(await client!.next()).toEqual({ reveal: { seat: 0, annonces } });
   });
 });

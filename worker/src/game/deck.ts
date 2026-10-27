@@ -1,19 +1,7 @@
-// A French Belote deck: 32 cards, ranks 7 through Ace in four suits.
-//
-// Ported verbatim from the frontend (frontend/src/deck.ts) so the worker derives
-// the exact same deterministic deal from a game number. Kept dependency-free and
-// pure; a shared package can replace the copy later.
+// A French Belote deck: pure dealing and shuffle helpers.
 
-export const SUITS = ["hearts", "diamonds", "clubs", "spades"] as const;
-export const RANKS = ["7", "8", "9", "10", "J", "Q", "K", "A"] as const;
-
-export type Suit = (typeof SUITS)[number];
-export type Rank = (typeof RANKS)[number];
-
-export interface Card {
-  suit: Suit;
-  rank: Rank;
-}
+import { SUITS, RANKS, type Card } from "../../../shared/game";
+export { SUITS, RANKS, type Card, type Rank, type Suit } from "../../../shared/game";
 
 /** Build an ordered 32-card Belote deck. */
 export function createDeck(): Card[] {
@@ -31,8 +19,7 @@ export type Rng = () => number;
 
 /**
  * Build a deterministic PRNG seeded from an arbitrary string. The same seed
- * always produces the same sequence, so every player who enters the same game
- * number derives an identical shuffle without any server.
+ * always produces the same sequence, allowing repeatable deals in tests.
  *
  * Uses a cyrb53-style hash to spread the seed, then a mulberry32 generator.
  */

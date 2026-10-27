@@ -3,17 +3,15 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
-# Allow the GITHUB_TOKEN to deploy to Pages.
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 # Allow one concurrent deployment, cancelling in-progress runs.
 concurrency:
-  group: pages
+  group: pages-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -38,10 +36,15 @@ jobs:
         env:
           VITE_WORKER_URL: https://belote-worker.liam-9fd.workers.dev
       - uses: actions/upload-pages-artifact@v5
+        if: github.event_name != 'pull_request'
         with:
           path: frontend/dist
 
   deploy:
+    if: github.event_name != 'pull_request'
+    permissions:
+      pages: write
+      id-token: write
     needs: build
     runs-on: ubuntu-latest
     environment:

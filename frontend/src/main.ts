@@ -2,6 +2,11 @@ import "./style.css";
 import { SUITS, RANKS, type Card, type Rank, type Suit } from "./deck";
 import { clearEffect, playResultEffect } from "./effects";
 import { derTeamOf, roundTotals } from "./result";
+import type { Seat, TrickPlay, Annonce, AnnonceKind, HandResult } from "../../shared/game";
+import type { ActionBodies, ClientState as GameState } from "../../shared/protocol";
+import { GameConnection } from "./connection";
+import { createTableAnimations } from "./animations";
+import { renderWithFocus } from "./focus";
 
 // Players sit in the four corners, numbered in go-around play order to match
 // the worker's seats: 0 → 1 → 2 → 3 → 0 around the table. Partners sit
@@ -97,7 +102,13 @@ interface CardOptions {
 }
 
 function renderCard(card: Card, opts: CardOptions = {}): HTMLElement {
-  const el = document.createElement("div");
+  const interactive = Boolean(((opts.playable || opts.premoveable) && opts.onPlay) || opts.onUndo);
+  const el = document.createElement(interactive ? "button" : "div");
+  if (el instanceof HTMLButtonElement) {
+    el.type = "button";
+    el.dataset.focusKey = `card-${cardKey(card)}`;
+    if (opts.premoveable) el.setAttribute("aria-pressed", String(Boolean(opts.premoved)));
+  }
   el.className = [
     "card",
     isRed(card.suit) ? "red" : "black",
@@ -119,7 +130,7 @@ function renderCard(card: Card, opts: CardOptions = {}): HTMLElement {
   `;
   el.setAttribute(
     "aria-label",
-    `${RANK_NAME[card.rank]} de ${SUIT_NAME[card.suit]}`,
+    `${opts.onUndo ? "Reprendre " : opts.premoveable ? "Préjouer " : opts.playable ? "Jouer " : ""}${RANK_NAME[card.rank]} de ${SUIT_NAME[card.suit]}`,
   );
   if ((opts.playable || opts.premoveable) && opts.onPlay) {
     el.addEventListener("click", (event) => {
@@ -182,121 +193,15 @@ function sortHand(cards: Card[]): Card[] {
 
 // --- Worker state -----------------------------------------------------------
 
-type Seat = 0 | 1 | 2 | 3;
-type Phase = "bidding" | "playing" | "finished";
-
-interface TrickPlay {
-  seat: Seat;
-  card: Card;
-}
-type AnnonceKind = "tierce" | "cinquante" | "cent" | "carre";
-interface Annonce {
-  team: 0 | 1;
-  kind: AnnonceKind;
-  rank: Rank;
-  suit?: Suit;
-  points: number;
-  /** The cards making up the declaration, in display order (low→high run). */
-  cards: Card[];
-}
-interface HandResult {
-  handPoints: [number, number];
-  cardPoints: [number, number];
-  madeContract: boolean;
-  capot: boolean;
-  beloteTeam: 0 | 1 | null;
-  annonceTeam: 0 | 1 | null;
-  annoncePoints: number;
-  annonces: Annonce[];
-}
-interface GameState {
-  phase: Phase;
-  opener: Seat;
-  hands: Card[][];
-  trumpCard: Card;
-  trump: Suit | null;
-  taker: Seat | null;
-  turn: Seat;
-  biddingRound: 1 | 2;
-  passes: number;
-  currentTrick: TrickPlay[];
-  tricks: { winner: Seat; cards: TrickPlay[] }[];
-  scores: [number, number];
-  result?: HandResult;
-  legal: Card[];
-  /** Cards the last player may swap their played card for (empty if none). */
-  replaceLegal: Card[];
-  /** Per seat: whether that hand holds a declaration it could show. */
-  canShowAnnonces: boolean[];
-}
-
 // Base URL of the Cloudflare Worker. Defaults to the local `wrangler dev`
 // server; set VITE_WORKER_URL at build time to point at the deployed worker.
 const WORKER_URL = import.meta.env.VITE_WORKER_URL ?? "http://localhost:8787";
 // The same endpoint over the WebSocket scheme (http→ws, https→wss).
 const WS_URL = WORKER_URL.replace(/^http/, "ws");
 
-// The single live socket to the worker. Actions are sent over it; state
-// arrives as broadcasts pushed by the worker, so there is no polling.
-let socket: WebSocket | null = null;
-// Delay before the next reconnect attempt. It doubles on each failure (up to a
-// cap) so a redeploy or network blip doesn't turn into a tight reconnect loop —
-// each attempt is a billed worker request — and resets once a connection opens.
-const RECONNECT_MIN = 1000;
-const RECONNECT_MAX = 30000;
-let reconnectDelay = RECONNECT_MIN;
-
-/** Open the socket and keep it open, reconnecting if it drops. */
-function connect(): void {
-  socket = new WebSocket(WS_URL);
-
-  socket.addEventListener("open", () => {
-    offline = false;
-    reconnectDelay = RECONNECT_MIN;
-    renderStatus();
-  });
-
-  socket.addEventListener("message", (ev) => {
-    const data = JSON.parse(ev.data as string);
-    if (data && typeof data === "object" && "error" in data) {
-      // An action rejection (e.g. an illegal move) needs no handling: every
-      // client already holds authoritative state. The worker deals the first
-      // hand itself on connect, so there's no "no game" case to start here.
-      return;
-    }
-    if (data && typeof data === "object" && "reveal" in data) {
-      // A player asked to show their annonces: flash them across the table.
-      showReveal(data.reveal as { seat: Seat; annonces: Annonce[] });
-      return;
-    }
-    const prev = state;
-    state = data as GameState;
-    offline = false;
-    syncPremove(); // play a queued pre-move if it's now this seat's turn
-    syncSummary(); // hold the summary box back briefly after the last card
-    if (sweepNeeded(prev)) startSweep(); // gather the finished trick to its winner
-    else handleDeal(); // animate a fresh deal, else render normally
-  });
-
-  socket.addEventListener("close", () => {
-    offline = true;
-    renderStatus();
-    // Reconnect with backoff; the worker pushes fresh state once it opens.
-    setTimeout(connect, reconnectDelay);
-    reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX);
-  });
-
-  socket.addEventListener("error", () => socket?.close());
-}
-
-/** Fire an action. The resulting state arrives as a broadcast, not a reply. */
-function send(path: string, body: unknown): void {
-  if (socket?.readyState === WebSocket.OPEN) {
-    socket.send(JSON.stringify({ path, body }));
-  } else {
-    offline = true;
-    renderStatus();
-  }
+/** Fire an action; authoritative state arrives through the connection. */
+function send<P extends keyof ActionBodies>(path: P, body: ActionBodies[P]): void {
+  connection.send(path, body);
 }
 
 // This tab plays for a single seat, chosen up front. The choice is held only
@@ -307,12 +212,12 @@ function setMySeat(seat: Seat | null): void {
   mySeat = seat;
   premove = null; // a queued pre-move belongs to the seat that set it
   if (seat === null) {
-    cancelTableAnim(); // leaving the table; stop any deal in progress
+    animations.cancel(); // leaving the table; stop any deal in progress
     render();
     return;
   }
   // Picking a seat on a freshly dealt hand starts the deal animation.
-  handleDeal();
+  animations.handleDeal();
 }
 
 let state: GameState | null = null;
@@ -322,7 +227,7 @@ let offline = false;
 // once played, or if it stops being a legal/held card by the time the turn comes.
 let premove: Card | null = null;
 // Played-card keys shown last render, so only freshly played cards animate in
-// (render rebuilds the DOM on every poll).
+// (render rebuilds the DOM on every state update).
 let lastPlayed = new Set<string>();
 // The summary box waits a moment after the last card so the final trick stays
 // on the table before the cards vanish and the box appears. `summaryRevealed`
@@ -330,39 +235,6 @@ let lastPlayed = new Set<string>();
 const SUMMARY_DELAY_MS = 3000;
 let summaryRevealed = false;
 let summaryTimer: number | null = null;
-
-// --- Deal animation ---------------------------------------------------------
-// On a fresh deal the cards fly out one at a time from the table centre before
-// bidding begins (see runDeal): first three to each seat, then two, then the
-// turned-up card to the middle. These track the in-flight animation so a new
-// deal, a seat change, or the game moving on can cancel it cleanly.
-let dealing = false;
-// Bumped to invalidate a running deal; runDeal aborts once its token is stale.
-let dealToken = 0;
-// Signature of the deal we've already animated, so each fresh deal animates once.
-let animatedDealSig: string | null = null;
-// Where each seat's cards landed during the deal (viewport coords, in deal
-// order), so the real hand can settle in from those spots — and the player's
-// cards turn over there — when the deal hands off to the live view.
-let dealtSpots: { x: number; y: number }[][] = [[], [], [], []];
-const DEAL_START_PAUSE_MS = 3000; // empty table before the first card
-const DEAL_CARD_MS = 280; // flight time of one card
-const DEAL_GAP_MS = 90; // gap between successive cards
-const DEAL_MID_PAUSE_MS = 3000; // after all 5×4 cards, before the retourne
-
-// When the winner leads the next trick, the completed trick's four cards first
-// sweep across to that winner before the new card appears. These guard that
-// brief animation the way the deal's do.
-let sweeping = false;
-let sweepToken = 0;
-const SWEEP_MS = 420; // time for the gathered trick to reach the winner
-
-// A player asking to show their annonces flashes the cards full-size across the
-// whole table for a moment, hiding every hand, then everything reverts. The
-// reveal is transient (not part of game state), so it can be requested again.
-let reveal: { seat: Seat; annonces: Annonce[] } | null = null;
-let revealTimer: number | null = null;
-const REVEAL_MS = 3000;
 
 /** Whether the round-summary box (and the hidden final trick) is now showing. */
 function summaryShown(): boolean {
@@ -399,11 +271,12 @@ function syncSummary(): void {
 
 /** Deal a fresh hand, confirming first if one is already under way. */
 function newGame(): void {
-  if (state && state.phase !== "finished") {
+  if (!state) return;
+  if (state.phase !== "finished") {
     if (!window.confirm("Une partie est en cours. Distribuer une nouvelle donne ?"))
       return;
   }
-  send("/new", undefined);
+  send("/new", { dealId: state.dealId });
 }
 
 // A bid: pass (suit null) or take at a suit.
@@ -450,12 +323,13 @@ function syncPremove(): void {
  * and cuts the pack. Confirms first if a match is already under way.
  */
 function newMatch(): void {
+  if (!state) return;
   if (
     state &&
     !window.confirm("Nouvelle partie ? Les scores seront remis à zéro.")
   )
     return;
-  send("/new-match", undefined);
+  send("/new-match", { dealId: state.dealId });
 }
 
 // --- Rendering --------------------------------------------------------------
@@ -612,14 +486,14 @@ function renderQuadrant(seat: Seat, s: GameState): HTMLElement {
       onUndo: iOwnTop ? () => void undo(seat) : undefined,
     });
     pc.classList.add("played");
-    // Animate only when this card is newly played (not on every poll redraw).
+    // Animate only when this card is newly played (not on every state update redraw).
     if (!lastPlayed.has(cardKey(played))) pc.classList.add("deal-in");
     q.appendChild(pc);
   }
 
   // Your bid controls, shown only on your turn during bidding (and not while
   // the deal is still being dealt out).
-  if (bidding && mine && s.turn === seat && !dealing) {
+  if (bidding && mine && s.turn === seat && !animations.dealing) {
     q.appendChild(renderBidControls(s, seat));
   }
 
@@ -628,6 +502,7 @@ function renderQuadrant(seat: Seat, s: GameState): HTMLElement {
   if (mine && s.phase === "playing" && s.tricks.length === 1 && s.canShowAnnonces[seat]) {
     const btn = document.createElement("button");
     btn.type = "button";
+    btn.dataset.focusKey = "show-annonces";
     btn.className = "show-annonces";
     btn.textContent = "Montrer les annonces";
     btn.addEventListener("click", () => showAnnonces(seat));
@@ -643,6 +518,7 @@ function renderBidControls(s: GameState, seat: Seat): HTMLElement {
 
   const passBtn = document.createElement("button");
   passBtn.type = "button";
+  passBtn.dataset.focusKey = "bid-pass";
   passBtn.className = "bid pass";
   passBtn.textContent = s.biddingRound === 1 ? "Non" : "Deux";
   passBtn.addEventListener("click", () => void bid(seat, null));
@@ -656,6 +532,7 @@ function renderBidControls(s: GameState, seat: Seat): HTMLElement {
   for (const suit of takeSuits) {
     const btn = document.createElement("button");
     btn.type = "button";
+    btn.dataset.focusKey = `bid-${suit}`;
     btn.className = `bid take-suit ${isRed(suit) ? "red" : "black"}`;
     btn.innerHTML = `Prend <span class="suit">${SUIT_SYMBOL[suit]}</span>`;
     btn.addEventListener("click", () => void bid(seat, suit));
@@ -681,6 +558,7 @@ function renderSeatSelect(): HTMLElement {
   for (const seat of [0, 1, 3, 2] as Seat[]) {
     const btn = document.createElement("button");
     btn.type = "button";
+    btn.dataset.focusKey = `seat-${seat}`;
     btn.className = `seat-pick ${seat % 2 === 0 ? "gold" : "blue"}`;
     btn.textContent = PLAYERS[seat];
     btn.addEventListener("click", () => setMySeat(seat));
@@ -730,10 +608,11 @@ function renderWinBox(s: GameState, winner: 0 | 1): HTMLElement {
 
   const again = document.createElement("button");
   again.type = "button";
+  again.dataset.focusKey = "new-match";
   again.className = "result-next";
   again.textContent = "Nouvelle partie";
   // The match is over, so start a fresh one straight away (no confirm needed).
-  again.addEventListener("click", () => send("/new-match", undefined));
+  again.addEventListener("click", () => send("/new-match", { dealId: s.dealId }));
   box.appendChild(again);
   return box;
 }
@@ -800,6 +679,7 @@ function renderResultBox(s: GameState): HTMLElement {
   // doing so, dismisses the box.
   const next = document.createElement("button");
   next.type = "button";
+  next.dataset.focusKey = "next-deal";
   next.className = "result-next";
   next.textContent = "Nouvelle donne";
   next.addEventListener("click", () => newGame());
@@ -889,7 +769,7 @@ function renderStatus(): void {
 function renderChangeSeat(): void {
   changeSeat.hidden = mySeat === null;
   // Starting a new match is available once you're seated.
-  newMatchBtn.hidden = mySeat === null;
+  newMatchBtn.hidden = mySeat === null || state === null;
 }
 
 function renderTitle(): void {
@@ -909,267 +789,58 @@ function render(): void {
   // While a deal is dealt out, or a finished trick is sweeping to its winner,
   // the animation owns the table — leave its DOM untouched so an incoming
   // broadcast doesn't wipe the cards mid-flight.
-  if (dealing || sweeping) return;
+  if (animations.dealing || animations.sweeping) return;
 
-  table.replaceChildren();
+  renderWithFocus(table, () => {
+    table.replaceChildren();
 
-  // Choose a seat before anything else; this device plays only for it.
-  if (mySeat === null) {
-    lastPlayed = new Set();
-    table.appendChild(renderSeatSelect());
-    return;
-  }
+    // Choose a seat before anything else; this device plays only for it.
+    if (mySeat === null) {
+      lastPlayed = new Set();
+      table.appendChild(renderSeatSelect());
+      return;
+    }
 
-  if (!state) {
-    lastPlayed = new Set();
-    const msg = document.createElement("div");
-    msg.className = "empty-msg";
-    msg.textContent = offline
-      ? "Worker hors ligne — nouvelle tentative…"
-      : "Aucune partie. Touchez « Nouvelle partie » pour distribuer.";
-    table.appendChild(msg);
-    return;
-  }
+    if (!state) {
+      lastPlayed = new Set();
+      const msg = document.createElement("div");
+      msg.className = "empty-msg";
+      msg.textContent = offline
+        ? "Worker hors ligne — nouvelle tentative…"
+        : "Connexion à la partie…";
+      table.appendChild(msg);
+      return;
+    }
 
-  // A reveal flashes one seat's annonces full-size and hides every hand, so it
-  // takes over the whole table until its timer reverts it.
-  if (reveal) {
+    // A reveal flashes one seat's annonces full-size and hides every hand, so it
+    // takes over the whole table until its timer reverts it.
+    if (animations.reveal) {
+      for (let seat = 0; seat < PLAYERS.length; seat++) {
+        table.appendChild(renderRevealQuadrant(seat as Seat, animations.reveal));
+      }
+      return;
+    }
+
     for (let seat = 0; seat < PLAYERS.length; seat++) {
-      table.appendChild(renderRevealQuadrant(seat as Seat, reveal));
+      table.appendChild(renderQuadrant(seat as Seat, state));
     }
-    return;
-  }
-
-  for (let seat = 0; seat < PLAYERS.length; seat++) {
-    table.appendChild(renderQuadrant(seat as Seat, state));
-  }
-  // The turned-up card sits in the middle only while bidding; once play starts
-  // the centre is left clear and played cards appear in each quadrant's corner.
-  if (state.phase === "bidding") table.appendChild(renderRetourne(state));
-  // Once the hand is over, the centre shows the round-summary box instead —
-  // after a brief pause that leaves the final trick on show (see syncSummary).
-  // If that hand carried a team past the target, the match is won, so the
-  // final-scores screen takes its place.
-  if (summaryShown() && state.result) {
-    const winner = matchWinner(state);
-    table.appendChild(
-      winner !== null ? renderWinBox(state, winner) : renderResultBox(state),
-    );
-  }
-
-  // Remember which cards are on the table so they don't re-animate next redraw.
-  lastPlayed = new Set(shownTrick(state).map((p) => cardKey(p.card)));
-}
-
-// --- Deal animation ---------------------------------------------------------
-
-const sleep = (ms: number) => new Promise<void>((r) => window.setTimeout(r, ms));
-
-const prefersReducedMotion = () =>
-  window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
-
-/**
- * A signature that is stable across one deal's whole bidding (bids don't change
- * the hands or the turned-up card) but differs for the next deal, so each fresh
- * deal animates exactly once. Null outside bidding.
- */
-function dealSignature(s: GameState | null): string | null {
-  // The opener rotates every deal and the turned-up card is fixed for the whole
-  // of a deal's bidding, so this is stable within one deal yet differs for the
-  // next — without hashing all four hands.
-  if (!s || s.phase !== "bidding") return null;
-  return `${s.opener}|${cardKey(s.trumpCard)}`;
-}
-
-/**
- * Decide what to do with freshly arrived (or seat-changed) state: animate a
- * brand-new deal, let a running deal animation continue, or — once the game has
- * moved on — tear any animation down and render normally.
- */
-function handleDeal(): void {
-  const sig = dealSignature(state);
-  // Once the game leaves bidding, forget the last animated signature so the next
-  // deal always animates — even a new match that happens to deal the same opener
-  // and retourne as the previous one.
-  if (sig === null) animatedDealSig = null;
-  if (sig && sig !== animatedDealSig && mySeat !== null) {
-    animatedDealSig = sig;
-    startDeal(state!);
-    return;
-  }
-  // The deal we're animating is still the current one (e.g. another seat bid):
-  // let the animation run on, ignoring the update.
-  if (dealing && sig === animatedDealSig) return;
-  if (dealing) cancelTableAnim();
-  render();
-}
-
-/** Begin (or restart) the deal animation, unless motion is reduced. */
-function startDeal(s: GameState): void {
-  cancelTableAnim();
-  if (prefersReducedMotion()) {
-    render();
-    return;
-  }
-  const token = ++dealToken;
-  dealing = true;
-  void runDeal(s, token);
-}
-
-/** Abort any running table animation (deal, trick-sweep, or annonce reveal) and
- *  clear its in-flight cards and timers. */
-function cancelTableAnim(): void {
-  dealToken++;
-  sweepToken++;
-  dealing = false;
-  sweeping = false;
-  reveal = null;
-  if (revealTimer !== null) {
-    clearTimeout(revealTimer);
-    revealTimer = null;
-  }
-  table.querySelectorAll(".dealing-card").forEach((el) => el.remove());
-}
-
-/** The empty table shown during the deal: quadrants with headers but no cards. */
-function renderDealSkeleton(s: GameState): void {
-  table.replaceChildren();
-  const empty: GameState = { ...s, hands: [[], [], [], []] };
-  for (let seat = 0; seat < PLAYERS.length; seat++) {
-    table.appendChild(renderQuadrant(seat as Seat, empty));
-  }
-}
-
-/**
- * Run the deal: pause on an empty table, fly three cards to each seat then two
- * (one at a time from the centre), pause once everyone holds five, then turn
- * the trump card up in the middle. Aborts at any await if its token goes stale.
- */
-async function runDeal(s: GameState, token: number): Promise<void> {
-  const alive = () => token === dealToken;
-  dealtSpots = [[], [], [], []];
-  renderDealSkeleton(s);
-  await sleep(DEAL_START_PAUSE_MS);
-  if (!alive()) return;
-
-  // Packets of three then two, dealt seat by seat — starting with the opener
-  // (who holds the "commence" badge and plays first) and going clockwise.
-  const order: Seat[] = [];
-  for (const packet of [3, 2]) {
-    for (let i = 0; i < PLAYERS.length; i++) {
-      const seat = ((s.opener + i) % PLAYERS.length) as Seat;
-      for (let c = 0; c < packet; c++) order.push(seat);
+    // The turned-up card sits in the middle only while bidding; once play starts
+    // the centre is left clear and played cards appear in each quadrant's corner.
+    if (state.phase === "bidding") table.appendChild(renderRetourne(state));
+    // Once the hand is over, the centre shows the round-summary box instead —
+    // after a brief pause that leaves the final trick on show (see syncSummary).
+    // If that hand carried a team past the target, the match is won, so the
+    // final-scores screen takes its place.
+    if (summaryShown() && state.result) {
+      const winner = matchWinner(state);
+      table.appendChild(
+        winner !== null ? renderWinBox(state, winner) : renderResultBox(state),
+      );
     }
-  }
-  const dealt: [number, number, number, number] = [0, 0, 0, 0];
-  for (const seat of order) {
-    if (!alive()) return;
-    flyCard(seat, dealt[seat]++);
-    await sleep(DEAL_CARD_MS + DEAL_GAP_MS);
-  }
-  if (!alive()) return;
 
-  await sleep(DEAL_MID_PAUSE_MS);
-  if (!alive()) return;
-  flyRetourne(s);
-  await sleep(DEAL_CARD_MS + 200);
-  if (!alive()) return;
-
-  dealing = false;
-  render(); // hand off to the real, fully-dealt view
-  settleHands(); // slide each card from where it was dealt, turning yours over
-}
-
-/**
- * Animate the freshly rendered hands in from where the deal left the cards: each
- * card starts at its dealt spot and eases to its place in the hand, and your own
- * cards turn over (a flip reveal) as they arrive. Runs right after render so the
- * cards never paint at their final spots first.
- */
-function settleHands(): void {
-  for (let seat = 0; seat < PLAYERS.length; seat++) {
-    const q = quadrantEl(seat as Seat);
-    if (!q) continue;
-    const spots = dealtSpots[seat] ?? [];
-    const cards = q.querySelectorAll<HTMLElement>(".cards .card");
-    cards.forEach((el, i) => {
-      const from = spots[i] ?? spots[spots.length - 1];
-      if (!from) return;
-      const c = rectCentre(el);
-      el.style.setProperty("--dx", `${from.x - c.x}px`);
-      el.style.setProperty("--dy", `${from.y - c.y}px`);
-      el.classList.add("deal-settle");
-      if (seat === mySeat) el.classList.add("reveal"); // your cards turn over
-    });
-  }
-}
-
-/**
- * Whether to sweep a finished trick to its winner: the previous state showed a
- * completed trick sitting on the table (no card led yet) and the new state has
- * just led the next trick's first card. The same completed trick is still the
- * last one in `tricks`, so its count is unchanged.
- */
-function sweepNeeded(prev: GameState | null): boolean {
-  return (
-    !!prev &&
-    !!state &&
-    state.phase === "playing" &&
-    prev.currentTrick.length === 0 &&
-    prev.tricks.length > 0 &&
-    state.currentTrick.length >= 1 &&
-    state.tricks.length === prev.tricks.length
-  );
-}
-
-/**
- * Gather the just-finished trick's four cards across to the player who won it,
- * then hand off to the real view so the newly led card appears. The cards from
- * the previous render are still on the table; animate those in place.
- */
-function startSweep(): void {
-  const winner = state!.tricks[state!.tricks.length - 1].winner;
-  const cards = Array.from(table.querySelectorAll<HTMLElement>(".played"));
-  if (prefersReducedMotion() || cards.length === 0) {
-    render();
-    return;
-  }
-  cancelTableAnim(); // never run a sweep and a deal at once
-  const token = ++sweepToken;
-  sweeping = true;
-
-  const target = rectCentre(quadrantEl(winner)!);
-  cards.forEach((el, i) => {
-    const c = rectCentre(el);
-    el.classList.remove("deal-in"); // its play-in is done; don't fight the sweep
-    el.classList.add("sweeping");
-    el.style.setProperty("--swx", `${target.x - c.x}px`);
-    el.style.setProperty("--swy", `${target.y - c.y}px`);
-    el.style.setProperty("--swr", `${(i - 1.5) * 8}deg`);
+    // Remember which cards are on the table so they don't re-animate next redraw.
+    lastPlayed = new Set(shownTrick(state).map((p) => cardKey(p.card)));
   });
-
-  window.setTimeout(() => {
-    if (token !== sweepToken) return;
-    sweeping = false;
-    render(); // now the newly led card appears
-  }, SWEEP_MS);
-}
-
-/**
- * Flash a seat's annonces full-size across the whole table for REVEAL_MS, hiding
- * every hand, then revert. The reveal is transient, so a later request simply
- * replaces it (its timer reset). Only seated clients show it.
- */
-function showReveal(r: { seat: Seat; annonces: Annonce[] }): void {
-  if (mySeat === null) return;
-  cancelTableAnim(); // clear any deal/sweep/reveal so this reveal owns the table
-  reveal = r;
-  render();
-  revealTimer = window.setTimeout(() => {
-    revealTimer = null;
-    reveal = null;
-    render(); // everything reverts to as it was before the button was pressed
-  }, REVEAL_MS);
 }
 
 /** One quadrant during a reveal: the seat's name, and — for the revealing seat
@@ -1190,73 +861,38 @@ function renderRevealQuadrant(seat: Seat, r: { seat: Seat; annonces: Annonce[] }
   return q;
 }
 
-/** The centre of an element's bounding box, in viewport coordinates. */
-function rectCentre(el: Element): { x: number; y: number } {
-  const r = el.getBoundingClientRect();
-  return { x: (r.left + r.right) / 2, y: (r.top + r.bottom) / 2 };
-}
-
-/** The DOM element for a seat's quadrant, if it is on the table. */
-function quadrantEl(seat: Seat): HTMLElement | null {
-  return table.querySelector<HTMLElement>("." + CORNERS[seat]);
-}
-
-/** Fly one face-down card from the centre to its place in `seat`'s hand. */
-function flyCard(seat: Seat, k: number): void {
-  const el = renderBack();
-  el.classList.add("dealing-card");
-  table.appendChild(el);
-  const cw = el.offsetWidth;
-  const ch = el.offsetHeight;
-  const tableRect = table.getBoundingClientRect();
-  const qr = quadrantEl(seat)!.getBoundingClientRect();
-  // Land near the seat's centre, fanned out by card index so five cards spread
-  // like a hand rather than stacking on one spot.
-  const tx = (qr.left + qr.right) / 2 - tableRect.left + (k - 2) * cw * 0.28;
-  const ty = (qr.top + qr.bottom) / 2 - tableRect.top;
-  // Remember where this card lands so the real hand can settle in from here.
-  dealtSpots[seat][k] = { x: tableRect.left + tx, y: tableRect.top + ty };
-  const c = { x: tableRect.width / 2, y: tableRect.height / 2 };
-  el.style.left = `${tx - cw / 2}px`;
-  el.style.top = `${ty - ch / 2}px`;
-  // Start stacked at the table centre, then ease out to the dealt spot. Both
-  // transforms list the same functions so the path interpolates cleanly, and a
-  // double rAF commits the centred start before it animates (a single reflow can
-  // be skipped, leaving the card to just appear in place).
-  el.style.transform = `translate(${c.x - tx}px, ${c.y - ty}px) rotate(0deg) scale(0.82)`;
-  requestAnimationFrame(() =>
-    requestAnimationFrame(() => {
-      el.style.transform = `translate(0px, 0px) rotate(${(k - 2) * 7}deg) scale(1)`;
-    }),
-  );
-}
-
-/** Turn the trump card up in the middle, the last step of the deal. */
-function flyRetourne(s: GameState): void {
-  const el = renderCard(s.trumpCard, { trump: true });
-  el.classList.add("dealing-card", "retourne-deal");
-  table.appendChild(el);
-  const cw = el.offsetWidth;
-  const ch = el.offsetHeight;
-  const tableRect = table.getBoundingClientRect();
-  const c = { x: tableRect.width / 2, y: tableRect.height / 2 };
-  el.style.left = `${c.x - cw / 2}px`;
-  el.style.top = `${c.y - ch / 2}px`;
-  el.style.opacity = "0";
-  el.style.transform = "translateY(-28px) scale(0.6)";
-  requestAnimationFrame(() =>
-    requestAnimationFrame(() => {
-      el.style.opacity = "1";
-      el.style.transform = "none";
-    }),
-  );
-}
-
 // --- Wiring -----------------------------------------------------------------
+
+const animations = createTableAnimations({
+  table, corners: CORNERS, getState: () => state, getSeat: () => mySeat,
+  render, renderQuadrant, renderBack, renderCard,
+});
 
 newMatchBtn.addEventListener("click", newMatch);
 changeSeat.addEventListener("click", () => setMySeat(null));
 
-// Open the socket. On connect the worker pushes the current game (or signals
-// none, prompting the first deal), and every later move arrives as a broadcast.
-connect();
+// Render immediately, including while the first connection is unavailable.
+const connection = new GameConnection(WS_URL, {
+  offline(value) {
+    offline = value;
+    render();
+  },
+  error(message) {
+    workerMsg.textContent = message === "stale deal"
+      ? "La donne a déjà changé."
+      : message;
+  },
+  reveal: animations.showReveal,
+  state(next) {
+    const prev = state;
+    if (prev?.dealId !== next.dealId) premove = null;
+    state = next;
+    offline = false;
+    syncPremove();
+    syncSummary();
+    if (animations.sweepNeeded(prev)) animations.startSweep();
+    else animations.handleDeal();
+  },
+});
+render();
+connection.connect();

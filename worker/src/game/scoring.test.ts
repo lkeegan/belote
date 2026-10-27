@@ -421,3 +421,28 @@ describe("handAnnonces — declared cards", () => {
     ]);
   });
 });
+
+describe("long annonce comparisons", () => {
+  it.each([6, 7, 8])("ranks a %i-card run above a five-card ace-high run", (length) => {
+    const ranks: Rank[] = ["7", "8", "9", "10", "J", "Q", "K", "A"];
+    const hands: Card[][] = [
+      ranks.slice(0, length).map((rank) => c(rank, "clubs")),
+      ranks.slice(3).map((rank) => c(rank, "diamonds")),
+      [], [],
+    ];
+    const used = new Set(hands.flat().map((card) => `${card.rank}-${card.suit}`));
+    const remaining = createDeck().filter((card) => !used.has(`${card.rank}-${card.suit}`));
+    let seat = 0;
+    for (const card of remaining) {
+      while (hands[seat % 4].length === 8) seat++;
+      hands[seat++ % 4].push(card);
+    }
+    const tricks = Array.from({ length: 8 }, (_, i) => ({
+      winner: (i % 2) as Seat,
+      cards: hands.map((hand, seat) => ({ seat: seat as Seat, card: hand[i] })),
+    }));
+    const result = scoreHand(tricks, "hearts", 0);
+    expect(result.annonceTeam).toBe(0);
+    expect(result.annonces.some((a) => a.cards.length === length)).toBe(true);
+  });
+});

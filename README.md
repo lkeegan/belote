@@ -6,8 +6,8 @@ built with TypeScript and [Vite](https://vitejs.dev/) on the front end and a
 on the back end. The interface is in French.
 
 A single global game lives in the Worker, which is the source of truth: it deals
-the cards, runs the bidding and play, and scores each hand. Every device polls it
-for the current state, so the four players stay in sync. There is no login —
+the cards, runs the bidding and play, and scores each hand. Every device keeps
+a WebSocket open for state broadcasts, so the four players stay in sync. There is no login —
 play is trust-based; you pick which player you are on each device.
 
 The four players are Sébastian, Maya, Liam and Dadmor, seated around a
@@ -19,8 +19,8 @@ full-screen table. Partners sit diagonally opposite, so the teams are
 - **Pick your seat.** Each device chooses *“Qui êtes-vous ?”*; from then on only
   that player's hand is shown face-up and the others stay covered. *Changez le
   joueur* in the title bar switches seats.
-- **Deal.** Each new deal is random. Everyone gets five cards (dealt in 3-then-2
-  packets) and one card is turned up — the *retourne* — proposing trump. The
+- **Deal.** A new match shuffles a fresh pack; later deals gather and cut it.
+  Everyone gets five cards (dealt in 3-then-2 packets) and one card is turned up — the *retourne* — proposing trump. The
   opener (marked *commence*) rotates one seat clockwise every deal; the first
   deal opens with Sébastian. *Nouvelle donne* deals the next hand.
 - **Bidding** runs in two rounds, in turn from the opener:
@@ -46,12 +46,21 @@ Full Belote scoring, computed by the Worker:
 - **Dix de der** — +10 to the team winning the last trick (162 points per hand).
 - **Belote-rebelote** — +20 to the team holding the King and Queen of trump,
   awarded automatically; it always counts.
-- **Contract** — the taker's team must score *strictly more* than the defenders;
-  a tie (81–81) or less is *dedans*, and the defenders take all 162.
+- **Contract** — the taker's team must score *strictly more* than the defenders,
+  including bonuses. A tie or less is *dedans*, and the defenders take all 162
+  card points.
 - **Capot** — sweeping all eight tricks scores 252.
 
-Scores accumulate across deals and are shown in the title bar. **Effacer les
-scores** resets them.
+Scores accumulate across deals and are shown in the title bar. **Nouvelle
+partie** reshuffles and resets them. A team wins by reaching 1000 while ahead;
+a tie at the target keeps the match going.
+
+Annonces (sequences and carrés) are detected automatically from the original
+eight-card hands. The team with the strongest declaration scores all of its
+annonces; equal top declarations cancel, with trump breaking sequence ties.
+Longer sequences beat shorter ones before comparing their top cards. Annonces
+and belote count toward the contract and remain with their holders on a dedans
+or capot. Players can reveal their original annonces during the second trick.
 
 ## Live site
 
@@ -60,6 +69,7 @@ https://keegan.ch/belote/
 
 ## Layout
 
+- `shared/` — card vocabulary and types used by the frontend and Worker.
 - `frontend/` — the Vite TypeScript app, published to GitHub Pages.
 - `worker/` — the Cloudflare Worker holding the game (the `BeloteGame` Durable
   Object) and the pure game engine in `worker/src/game/` (deck, rules, scoring,
@@ -67,18 +77,31 @@ https://keegan.ch/belote/
 
 ## API
 
-The Worker exposes one global game; every response is the full game state plus
-the current player's legal cards.
+The Worker exposes one global game over a WebSocket connection to its base URL
+(`ws://localhost:8787` locally, `wss://…` in production). It validates the Origin
+before upgrading. REST endpoints are not provided.
 
-| Method | Path     | Body                  | Effect                                      |
-| ------ | -------- | --------------------- | ------------------------------------------- |
-| `GET`  | `/state` | –                     | the current game state                      |
-| `POST` | `/new`   | –                     | deal the next hand (rotating the opener)    |
-| `POST` | `/bid`   | `{ seat, suit }`      | bid: `suit: null` passes, else takes at it  |
-| `POST` | `/play`  | `{ seat, card }`      | play a card (validated against the rules)   |
-| `POST` | `/clear` | –                     | reset the cumulative scores                 |
+On connection, the Worker sends the current game, dealing the first hand if
+needed. Send JSON messages of the form `{ "path": "/bid", "body": { … } }`.
+Successful actions broadcast the new state to every connection; invalid actions
+send `{ "error": "…" }` only to the sender and leave state untouched.
 
-Illegal actions return `400 { error }` and leave the state untouched.
+| Path | Body | Effect |
+| ---- | ---- | ------ |
+| `/new` | `{ dealId }` | Gather, cut and deal the next hand; rotate the opener |
+| `/new-match` | `{ dealId }` | Shuffle a fresh pack and reset scores |
+| `/bid` | `{ seat, suit }` | Pass with `suit: null`, otherwise take |
+| `/play` | `{ seat, card }` | Play a legal card |
+| `/undo` | `{ seat }` | Take back the last card before another card covers it |
+| `/replace` | `{ seat, card }` | Replace that last card with a legal alternative |
+| `/show-annonces` | `{ seat }` | Broadcast `{ reveal: { seat, annonces } }` on the second trick |
+
+`dealId` comes from the displayed state and increases with each deal, including
+new matches and hands passed twice. The server rejects stale deal-changing
+requests, so simultaneous next-deal clicks cannot skip a hand. Cards have
+`{ suit, rank }`; seats are numbered 0–3. State includes all four hands (the game
+is trust-based), legal plays/replacements, and annonce-reveal eligibility; the
+undealt talon stays on the server. Shared definitions live in `shared/`.
 
 ## Development
 
@@ -91,7 +114,8 @@ cd worker
 pnpm install
 cp .dev.vars.example .dev.vars   # first time only
 pnpm dev                         # serves the worker at http://localhost:8787
-pnpm test                        # run the engine + HTTP tests (Vitest)
+pnpm test                        # run the engine + WebSocket tests (Vitest)
+pnpm typecheck                   # check Worker TypeScript
 
 # Terminal 2 — the front end
 cd frontend
@@ -105,8 +129,8 @@ pnpm test     # run the unit tests (Vitest)
 The front end defaults to `http://localhost:8787`; set `VITE_WORKER_URL` at
 build time (CI sets it to the deployed worker) to point the deployed site at it.
 
-The Worker restricts CORS to known front-end origins. `keegan.ch` is always
-allowed; the local Vite origins are allowed only in development, signalled by
+The Worker restricts WebSocket connections to known front-end origins.
+`keegan.ch` is always allowed; the local Vite origins are allowed only in development, signalled by
 `ENVIRONMENT=development` from `.dev.vars` (which `wrangler dev` loads
 automatically — the deployed worker uses the `production` value from
 `wrangler.jsonc`). Re-run `pnpm cf-typegen` after changing `vars`/bindings.
@@ -115,9 +139,12 @@ automatically — the deployed worker uses the `production` value from
 
 - `worker/` holds the bulk of the tests: the pure game engine (dealing, card
   order, legal moves, trick resolution, every scoring case, the bidding state
-  machine) plus the HTTP/Durable Object layer. They run in CI on every push and
-  pull request via `.github/workflows/worker-tests.yml`.
-- `frontend/` tests cover the card vocabulary and run before each Pages deploy.
+  machine) plus the WebSocket/Durable Object layer. They run in CI on every push
+  and pull request via `.github/workflows/worker-tests.yml`.
+- `frontend/` tests cover result helpers, connection/animation lifecycles, keyboard
+  controls, focus preservation, and effect cleanup. Tests and the production
+  build run on pull requests and before each Pages deploy. The Worker also
+  runs type-checking in CI.
 
 ## Deployment
 

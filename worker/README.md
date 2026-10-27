@@ -8,6 +8,8 @@ A Cloudflare worker for the belote web page.
 |---------|---------|
 | `pnpm dev` | Local development |
 | `pnpm deploy` | Deploy to Cloudflare |
-| `pnpm types` | Generate TypeScript types |
+| `pnpm test` | Run engine and WebSocket tests |
+| `pnpm typecheck` | Check TypeScript |
+| `pnpm cf-typegen` | Generate TypeScript types |
 
-Run `pnpm types` after changing bindings in wrangler.jsonc.
+Run `pnpm cf-typegen` after changing bindings in wrangler.jsonc.

@@ -2,50 +2,10 @@
 // annonces (sequences and carrés), the made/dedans contract decision, and capot.
 
 import { type Card, type Rank, type Suit, RANKS, SUITS } from "./deck";
-import { type Seat, type TrickPlay, cardPoints, teamOf } from "./rules";
+import { type Seat, cardPoints, teamOf } from "./rules";
 
-export interface CompletedTrick {
-  winner: Seat;
-  cards: TrickPlay[];
-}
-
-/** A declaration (annonce): a run of cards or a four-of-a-kind in one hand. */
-export type AnnonceKind = "tierce" | "cinquante" | "cent" | "carre";
-
-export interface Annonce {
-  team: 0 | 1;
-  kind: AnnonceKind;
-  /** Top card of a sequence, or the shared rank of a carré. */
-  rank: Rank;
-  /** Suit of a sequence; omitted for a carré (it spans all four suits). */
-  suit?: Suit;
-  points: number;
-  /**
-   * The cards that make up the declaration, in display order: a sequence runs
-   * low→high (7-8-9…), a carré lists its four suits. Lets clients show the
-   * actual cards when a player reveals their annonces.
-   */
-  cards: Card[];
-}
-
-export interface HandResult {
-  /** Points added to each team this hand, [team {0,2}, team {1,3}]. */
-  handPoints: [number, number];
-  /** Raw card points each team captured in tricks, before dix de der. */
-  cardPoints: [number, number];
-  /** Whether the taker's team fulfilled the contract. */
-  madeContract: boolean;
-  /** Whether one team swept all eight tricks. */
-  capot: boolean;
-  /** Team awarded belote-rebelote (+20), or null if no one held K+Q of trump. */
-  beloteTeam: 0 | 1 | null;
-  /** Team awarded the annonces, or null if there were none (or a top-tie). */
-  annonceTeam: 0 | 1 | null;
-  /** Total annonce points awarded to annonceTeam (0 if none). */
-  annoncePoints: number;
-  /** The winning team's annonces, for display. */
-  annonces: Annonce[];
-}
+import type { Annonce, CompletedTrick, HandResult } from "../../../shared/game";
+export type { Annonce, AnnonceKind, CompletedTrick, HandResult } from "../../../shared/game";
 
 // 152 card points + 10 for the last trick (dix de der) = 162 per hand.
 const TOTAL_POINTS = 162;
@@ -133,7 +93,7 @@ export function handAnnonces(hand: Card[], seat: Seat, trump: Suit): Annonce[] {
  */
 function strength(a: Annonce, trump: Suit): [number, number] {
   if (a.kind === "carre") return [2, a.points * 10 + RANKS.indexOf(a.rank)];
-  const length = a.kind === "cent" ? 5 : a.kind === "cinquante" ? 4 : 3;
+  const length = a.cards.length;
   const trumpBreak = a.suit === trump ? 1 : 0;
   return [1, length * 1000 + RANKS.indexOf(a.rank) * 2 + trumpBreak];
 }

@@ -602,6 +602,18 @@ describe("annoncesToReveal", () => {
     expect(r.annonces[0].kind).toBe("tierce");
   });
 
+  it("includes annonce cards already played in either trick", () => {
+    const s = craftSecondTrick();
+    const nine = s.hands[0].shift()!;
+    const ten = s.hands[0].shift()!;
+    s.tricks[0].cards[0] = { seat: 0, card: nine };
+    s.currentTrick = [{ seat: 0, card: ten }];
+    const r = annoncesToReveal(s, 0);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.annonces[0].cards).toEqual([nine, ten, s.hands[0][0]]);
+  });
+
   it("rejects a reveal outside the second trick", () => {
     const s = { ...craftSecondTrick(), tricks: [] };
     expect(annoncesToReveal(s, 0)).toEqual({
@@ -621,5 +633,31 @@ describe("annoncesToReveal", () => {
     const s = craftSecondTrick();
     expect(annoncesToReveal(s, 0).ok).toBe(true);
     expect(annoncesToReveal(s, 0).ok).toBe(true);
+  });
+});
+
+describe("deal identity", () => {
+  it("keeps an ID during bidding and advances it for passed hands and new matches", () => {
+    const first = deal();
+    const passed = passOnce(first);
+    expect(passed.dealId).toBe(first.dealId);
+    let next = passed;
+    for (let i = 1; i < 8; i++) next = passOnce(next);
+    expect(next.dealId).toBe(first.dealId + 1);
+    const match = reduce(next, { type: "match", dealId: next.dealId });
+    if (!match.ok) throw new Error(match.error);
+    expect(match.state.dealId).toBe(next.dealId + 1);
+  });
+
+  it("rejects duplicate next-deal and new-match requests without mutating state", () => {
+    for (const type of ["new", "match"] as const) {
+      const first = deal();
+      const action = { type, dealId: first.dealId };
+      const next = reduce(first, action);
+      if (!next.ok) throw new Error(next.error);
+      const before = JSON.stringify(next.state);
+      expect(reduce(next.state, action)).toEqual({ ok: false, error: "stale deal" });
+      expect(JSON.stringify(next.state)).toBe(before);
+    }
   });
 });

@@ -402,6 +402,10 @@ body {
 
 .card {
   position: relative;
+  padding: 0;
+  font: inherit;
+  text-align: left;
+  appearance: none;
   width: var(--card-w);
   height: var(--card-h);
   /* Become a size container so the rank/suit text and pip scale with the card
@@ -437,6 +441,11 @@ body {
 }
 .card.playable:hover {
   transform: translateY(-8px);
+}
+
+.card:focus-visible {
+  outline: 3px solid #7ac8ff;
+  outline-offset: 4px;
 }
 
 /* A card that cannot be played this trick is dimmed and inert. */

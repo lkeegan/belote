@@ -5,13 +5,8 @@
 
 import { type Card, type Rank, type Suit } from "./deck";
 
-export type Seat = 0 | 1 | 2 | 3;
-
-/** A single card played to the current trick, tagged with who played it. */
-export interface TrickPlay {
-  seat: Seat;
-  card: Card;
-}
+import type { Seat, TrickPlay } from "../../../shared/game";
+export type { Seat, TrickPlay } from "../../../shared/game";
 
 /** Team index (0 for seats {0,2}, 1 for seats {1,3}). */
 export function teamOf(seat: Seat): 0 | 1 {

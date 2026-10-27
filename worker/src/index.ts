@@ -1,7 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { type Card } from "./game/deck";
 import { type Seat, legalMoves } from "./game/rules";
-import { handAnnonces } from "./game/scoring";
+import type { ClientState } from "../../shared/protocol";
 import {
   type Action,
   type GameState,
@@ -11,17 +11,6 @@ import {
   reduce,
   replaceOptions,
 } from "./game/state";
-
-/**
- * State as sent to clients: the game (minus the face-down talon, which the
- * client never uses), the current turn's legal cards, the cards the last player
- * may swap their move for, and which seats hold a declaration they could show.
- */
-type ClientState = Omit<GameState, "talon"> & {
-  legal: Card[];
-  replaceLegal: Card[];
-  canShowAnnonces: boolean[];
-};
 
 /**
  * Derive the view facts the client would otherwise have to re-implement the
@@ -35,9 +24,8 @@ function toClientState(state: GameState): ClientState {
     ? legalMoves(state.hands[state.turn], state.currentTrick, state.trump!, state.turn)
     : [];
   // Annonces may only be shown on the second trick (matches annoncesToReveal).
-  const showWindow = playing && state.tricks.length === 1;
-  const canShowAnnonces = state.hands.map((hand, seat) =>
-    showWindow ? handAnnonces(hand, seat as Seat, state.trump!).length > 0 : false,
+  const canShowAnnonces = state.hands.map((_, seat) =>
+    annoncesToReveal(state, seat as Seat).ok,
   );
   const { talon, ...rest } = state; // talon is server-only; never sent
   return { ...rest, legal, replaceLegal: replaceOptions(state), canShowAnnonces };
@@ -66,7 +54,9 @@ export class BeloteGame extends DurableObject<Env> {
   /** The current game state, or null if no game has been started. */
   async getState(): Promise<GameState | null> {
     if (this.cached === undefined) {
-      this.cached = (await this.ctx.storage.get<GameState>(STATE_KEY)) ?? null;
+      const stored = await this.ctx.storage.get<GameState>(STATE_KEY);
+      // Preserve games saved before deal IDs were introduced.
+      this.cached = stored ? { ...stored, dealId: stored.dealId ?? 0 } : null;
     }
     return this.cached;
   }
@@ -120,8 +110,7 @@ export class BeloteGame extends DurableObject<Env> {
   }
 
   /**
-   * A client sent an action over its socket. Validate it with the same parser
-   * the REST endpoints used, apply it, and broadcast the new state to everyone.
+   * Validate an action from a socket, apply it, and broadcast the new state.
    * Rejections go only to the sender, whose action changed nothing.
    */
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
@@ -130,6 +119,10 @@ export class BeloteGame extends DurableObject<Env> {
       const text =
         typeof message === "string" ? message : new TextDecoder().decode(message);
       envelope = JSON.parse(text);
+      if (envelope === null || typeof envelope !== "object" || Array.isArray(envelope) ||
+          typeof envelope.path !== "string") {
+        throw new Error("invalid envelope");
+      }
     } catch {
       ws.send(JSON.stringify({ error: "invalid message" }));
       return;
@@ -138,7 +131,7 @@ export class BeloteGame extends DurableObject<Env> {
     // validate against the live state and broadcast the cards to everyone, so
     // every client flashes them full-size for a moment. Nothing is stored, so a
     // player may ask to show them again while the second trick is open.
-    if (String(envelope.path) === "/show-annonces") {
+    if (envelope.path === "/show-annonces") {
       const seat = asSeat((envelope.body as { seat?: unknown })?.seat);
       if (seat === null) {
         ws.send(JSON.stringify({ error: "seat must be 0–3" }));
@@ -153,7 +146,7 @@ export class BeloteGame extends DurableObject<Env> {
       return;
     }
 
-    const parsed = parseAction(String(envelope.path), envelope.body);
+    const parsed = parseAction(envelope.path, envelope.body);
     if ("error" in parsed) {
       ws.send(JSON.stringify({ error: parsed.error }));
       return;
@@ -221,7 +214,7 @@ function asSeat(value: unknown): Seat | null {
   return isSeat(value) ? value : null;
 }
 
-/** Parse a POST body into an Action, or return an error message. */
+/** Parse a WebSocket action body, or return an error message. */
 function parseAction(
   path: string,
   body: unknown,
@@ -229,7 +222,11 @@ function parseAction(
   const b = (body ?? {}) as Record<string, unknown>;
   switch (path) {
     case "/new":
-      return { action: { type: "new" } };
+    case "/new-match": {
+      if (!Number.isSafeInteger(b.dealId) || (b.dealId as number) < 0)
+        return { error: "dealId must be a non-negative integer" };
+      return { action: { type: path === "/new" ? "new" : "match", dealId: b.dealId as number } };
+    }
     case "/bid": {
       const seat = asSeat(b.seat);
       if (seat === null) return { error: "seat must be 0–3" };
@@ -246,8 +243,6 @@ function parseAction(
         return { error: "invalid suit" };
       return { action: { type: "bid", seat, suit } };
     }
-    case "/new-match":
-      return { action: { type: "match" } };
     case "/undo": {
       const seat = asSeat(b.seat);
       if (seat === null) return { error: "seat must be 0–3" };

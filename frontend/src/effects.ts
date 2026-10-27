@@ -1,7 +1,7 @@
 // Celebration effects shown over the round-summary box: confetti when the
 // contract is made, rain when it falls (dedans), and a nuclear explosion on a
 // capot. All are purely decorative, draw over everything with pointer-events
-// disabled, and run until cleared (when the next hand is dealt).
+// disabled, and clean themselves up once finished.
 
 import confetti from "canvas-confetti";
 
@@ -45,7 +45,16 @@ function makeOverlay(kind: string): HTMLElement {
 /** Fade the current overlay out after `ms`, so the effect settles like the
  *  confetti does rather than running forever. */
 function fadeOverlayAfter(ms: number): void {
-  loopTimer = window.setTimeout(() => overlay?.classList.add("fx-fade"), ms);
+  const fading = overlay;
+  loopTimer = window.setTimeout(() => {
+    fading?.classList.add("fx-fade");
+    // Match .fx's 0.85s opacity transition, then stop its child animations.
+    loopTimer = window.setTimeout(() => {
+      fading?.remove();
+      if (overlay === fading) overlay = null;
+      loopTimer = 0;
+    }, 850);
+  }, ms);
 }
 
 // A heavy fall of confetti streaming down from the top edge.

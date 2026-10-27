@@ -1,6 +1,6 @@
 import { defineConfig } from "vite";
 
-// Project is served from https://lkeegan.github.io/belote/ on GitHub Pages.
+// GitHub Pages serves the site at https://keegan.ch/belote/.
 export default defineConfig({
   base: "/belote/",
 });

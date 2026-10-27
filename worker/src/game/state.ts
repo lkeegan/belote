@@ -26,51 +26,12 @@ import {
 import {
   type Annonce,
   type CompletedTrick,
-  type HandResult,
   handAnnonces,
   scoreHand,
 } from "./scoring";
 
-export type Phase = "bidding" | "playing" | "finished";
-
-export interface GameState {
-  phase: Phase;
-  /** Seat that opens (bids first and leads the first trick); rotates each deal. */
-  opener: Seat;
-  /** Four hands, all visible (no hidden information). Cards leave as they're played. */
-  hands: Card[][];
-  /** The turned-up card proposing trump (the retourne). */
-  trumpCard: Card;
-  /** Face-down cards drawn to complete the hands once someone takes. */
-  talon: Card[];
-  /** Trump suit, set once someone takes. */
-  trump: Suit | null;
-  taker: Seat | null;
-  /** Whose move it is — the current bidder, or the player to move. */
-  turn: Seat;
-  /** Which bidding round is open: 1 takes the retourne suit, 2 names another. */
-  biddingRound: 1 | 2;
-  /** Passes so far in the current bidding round (4 ends the round). */
-  passes: number;
-  currentTrick: TrickPlay[];
-  tricks: CompletedTrick[];
-  /** Cumulative points, [team {0,2}, team {1,3}]. */
-  scores: [number, number];
-  /** Set once the hand is finished. */
-  result?: HandResult;
-}
-
-export type Action =
-  | { type: "new" }
-  // A bid: `suit === null` passes; otherwise the seat takes at that suit.
-  | { type: "bid"; seat: Seat; suit: Suit | null }
-  | { type: "play"; seat: Seat; card: Card }
-  // Take back the last card played to the current trick (only its player may).
-  | { type: "undo"; seat: Seat }
-  // Swap the last played card for another (take back, then play in its place).
-  | { type: "replace"; seat: Seat; card: Card }
-  // Start a new match: reshuffle a fresh pack and reset the scores to zero.
-  | { type: "match" };
+import type { Action, GameState } from "../../../shared/game";
+export type { Action, GameState, Phase } from "../../../shared/game";
 
 export type ReduceResult =
   | { ok: true; state: GameState }
@@ -81,6 +42,7 @@ const TRICKS_PER_HAND = 8;
 /** A fresh bidding-phase state for `opener` from an opening deal. */
 function gameFromDeal(opener: Seat, deal: BeloteDeal): GameState {
   return {
+    dealId: 0,
     phase: "bidding",
     opener,
     hands: deal.hands,
@@ -147,6 +109,7 @@ function dealNext(prev: GameState, rng: Rng): GameState {
   const deck = cut(gatherDeck(prev), rng);
   const game = gameFromDeal(nextSeat(prev.opener), dealBeloteFromDeck(deck));
   game.scores = [...prev.scores];
+  game.dealId = prev.dealId + 1;
   return game;
 }
 
@@ -156,6 +119,11 @@ export function reduce(
   action: Action,
   rng: Rng = Math.random,
 ): ReduceResult {
+  if ((action.type === "new" || action.type === "match") &&
+      action.dealId !== undefined && action.dealId !== state?.dealId) {
+    return err("stale deal");
+  }
+
   if (action.type === "new") {
     // The first deal opens with seat 0; later deals rotate clockwise.
     const game = state ? dealNext(state, rng) : createGame(0, rng);
@@ -165,7 +133,9 @@ export function reduce(
   if (action.type === "match") {
     // A new match is the one time the pack is shuffled: a fresh deal opened by
     // seat 0 with the scores back to zero.
-    return { ok: true, state: createGame(0, rng) };
+    const game = createGame(0, rng);
+    game.dealId = state ? state.dealId + 1 : 0;
+    return { ok: true, state: game };
   }
 
   if (!state) return err("no game in progress");
@@ -358,7 +328,7 @@ function replace(state: GameState, seat: Seat, card: Card): ReduceResult {
  * let opponents ask to see declarations on the second trick, so that is the only
  * window; the reveal is ephemeral (a transient broadcast, not stored in state),
  * so it may be requested repeatedly while the window is open. The combinations
- * are read from the cards still held.
+ * are read from the original hand, including cards already played.
  */
 export function annoncesToReveal(
   state: GameState | null,
@@ -370,7 +340,12 @@ export function annoncesToReveal(
   if (!isSeat(seat)) return { ok: false, error: "invalid seat" };
   if (state.tricks.length !== 1)
     return { ok: false, error: "annonces are shown on the second trick" };
-  const annonces = handAnnonces(state.hands[seat], seat, state.trump);
+  const hand = [
+    ...state.hands[seat],
+    ...state.tricks.flatMap((t) => t.cards).filter((p) => p.seat === seat).map((p) => p.card),
+    ...state.currentTrick.filter((p) => p.seat === seat).map((p) => p.card),
+  ];
+  const annonces = handAnnonces(hand, seat, state.trump);
   if (annonces.length === 0) return { ok: false, error: "no annonces to show" };
   return { ok: true, annonces };
 }
