@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Belote — laboratoire vocal</title>
+    <style>
+      :root { font-family: system-ui, sans-serif; color: #193b2b; background: #f0f5f1; }
+      body { max-width: 56rem; margin: auto; padding: 1.5rem; }
+      h1 { margin-bottom: .4rem; }
+      label { display: block; margin: .8rem 0; }
+      select, input, button { font: inherit; padding: .55rem; border: 1px solid #759c86; border-radius: .4rem; }
+      button { cursor: pointer; background: #dcebdc; }
+      button:disabled { opacity: .5; cursor: default; }
+      input[type="text"], input[type="url"] { width: min(95%, 32rem); }
+      fieldset { border: 1px solid #b1c8ba; border-radius: .5rem; margin: 1.2rem 0; }
+      pre, output { display: block; padding: .8rem; background: white; white-space: pre-wrap; overflow-wrap: anywhere; }
+      .hint { font-size: .9rem; }
+      #privacy { min-height: 2.5rem; }
+    </style>
+  </head>
+  <body>
+    <h1>Laboratoire vocal Belote</h1>
+    <p>Comparez la transcription et l’enchère comprise. Ce laboratoire n’envoie aucune action à la partie.</p>
+    <p><a href="./">Retour à la table</a></p>
+    <fieldset>
+      <legend>Reconnaissance</legend>
+      <label>Moteur <select id="engine">
+        <option value="browser">Navigateur — français</option>
+        <option value="browser-local">Navigateur — local expérimental</option>
+        <option value="vosk-free">Vosk WASM — vocabulaire libre, sur cet appareil</option>
+        <option value="vosk-grammar">Vosk WASM — grammaire Belote, sur cet appareil</option>
+      </select></label>
+      <p id="privacy" class="hint"></p>
+      <button id="listen" type="button">🎙 Enregistrer une phrase</button>
+      <button id="stop" type="button" disabled>Arrêter</button>
+      <button id="install" type="button" hidden>Installer le français local</button>
+      <button id="load-model" type="button" hidden>Charger Vosk français (~40 Mo)</button>
+      <p id="status" role="status">Prêt.</p>
+      <label>Fichier audio (Vosk WASM) <input id="audio-file" type="file" accept="audio/*" /></label>
+      <p class="hint">Vosk fonctionne dans ce navigateur, sans serveur de transcription. Premier chargement : modèle français (~40 Mo). Les enregistrements Vosk s’arrêtent après 4 secondes.</p>
+    </fieldset>
+    <fieldset>
+      <legend>Contexte d’enchère simulé</legend>
+      <label>Tour <select id="round"><option value="1">Premier tour</option><option value="2">Deuxième tour</option></select></label>
+      <label>Retourne <select id="turned"><option value="hearts">Cœur</option><option value="diamonds">Carreau</option><option value="clubs">Trèfle</option><option value="spades">Pique</option></select></label>
+      <label>Texte à tester <input id="text" type="text" value="Je prends à cœurs" /></label>
+      <button id="parse" type="button">Comprendre le texte</button>
+    </fieldset>
+    <h2>Résultat</h2>
+    <p>Transcription brute</p><output id="transcript"></output>
+    <p>Commande et enchère disponibles</p><pre id="command"></pre>
+    <p id="timing" class="hint"></p>
+    <script type="module" src="/src/voice-lab.ts"></script>
+  </body>
+</html>

@@ -10,6 +10,20 @@ import { TestSocket } from "./test-socket";
 
 vi.mock("./effects", () => ({ clearEffect: vi.fn(), playResultEffect: vi.fn() }));
 
+const capture = vi.hoisted(() => ({
+  handlers: null as import("./voice/microphone").CaptureHandlers | null,
+  key: null as string | null,
+  close: vi.fn(),
+}));
+vi.mock("./voice/microphone", () => ({
+  canUseVoskMicrophone: () => true,
+  VoskMicrophone: class {
+    async start(handlers: import("./voice/microphone").CaptureHandlers) { capture.handlers = handlers; }
+    listen(key: string | null) { capture.key = key; }
+    close = capture.close;
+  },
+}));
+
 const initial = () => createGame(0, makeRng("frontend"));
 function clientState(state: GameState): ClientState {
   const { talon, ...rest } = state;
@@ -28,6 +42,9 @@ beforeEach(async () => {
   vi.useFakeTimers();
   TestSocket.instances = [];
   vi.stubGlobal("WebSocket", TestSocket);
+  capture.handlers = null;
+  capture.key = null;
+  capture.close.mockClear();
   vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false })));
   document.body.innerHTML = html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/g, "");
   await import("./main");
@@ -107,4 +124,42 @@ it("animates a new deal ID even with the same opener and retourne", async () => 
   expect(document.querySelector(".bid-controls")).not.toBeNull();
   socket().message(clientState({ ...bidding, dealId: bidding.dealId + 1 }));
   expect(document.querySelector(".bid-controls")).toBeNull();
+});
+
+it("sends a Vosk bid through the game connection and shows its raw text and match", async () => {
+  vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: true })));
+  socket().open();
+  const bidding = initial();
+  bidding.trumpCard = { suit: "hearts", rank: "7" };
+  socket().message(clientState(bidding));
+  pickSeat();
+  const button = document.querySelector<HTMLButtonElement>("#voice-bid")!;
+  expect(button.disabled).toBe(false);
+  button.click();
+  await vi.waitFor(() => expect(capture.key).not.toBeNull());
+  capture.handlers!.final(capture.key!, "Je prends à coeurs");
+  expect(document.querySelector("#voice-transcript")!.textContent).toBe("Je prends à coeurs");
+  expect(document.querySelector("#voice-match")!.textContent).toContain("envoyé");
+  expect(socket().sent.map((message) => JSON.parse(message))).toEqual([
+    { path: "/bid", body: { seat: 0, suit: "hearts" } },
+  ]);
+});
+
+it("discards queued speech after a new deal arrives", async () => {
+  vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: true })));
+  socket().open();
+  const bidding = initial();
+  socket().message(clientState(bidding));
+  pickSeat();
+  const button = document.querySelector<HTMLButtonElement>("#voice-bid")!;
+  button.click();
+  await vi.waitFor(() => expect(capture.key).not.toBeNull());
+  const key = capture.key!;
+  socket().message(clientState({ ...bidding, dealId: bidding.dealId + 1 }));
+  capture.handlers!.final(key, "Non");
+  expect(socket().sent).toEqual([]);
+  expect(button.getAttribute("aria-pressed")).toBe("true");
+  expect(document.querySelector("#voice-match")!.textContent).toContain("Ignoré");
+  button.click();
+  expect(capture.close).toHaveBeenCalled();
 });

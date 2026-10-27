@@ -13,6 +13,12 @@
         <span id="scoreboard" class="scoreboard"></span>
         <button id="new-match" type="button" hidden>Nouvelle partie</button>
         <button id="change-seat" type="button" hidden>Changez le joueur</button>
+        <button id="voice-bid" type="button" hidden title="Activer Vosk sur cet appareil pour les enchères : « je prends à cœur », « non », « deux ». Aucun envoi audio.">🎙 Activer l’audio</button>
+        <span id="voice-msg" class="voice-msg" role="status" hidden></span>
+        <div id="voice-debug" class="voice-debug" hidden>
+          <span>Entendu : <output id="voice-transcript">—</output></span>
+          <output id="voice-match" role="status"></output>
+        </div>
         <span id="worker-msg" class="worker-msg"></span>
       </header>
       <div id="table"></div>

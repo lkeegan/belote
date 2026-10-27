@@ -7,6 +7,7 @@ import type { ActionBodies, ClientState as GameState } from "../../shared/protoc
 import { GameConnection } from "./connection";
 import { createTableAnimations } from "./animations";
 import { renderWithFocus } from "./focus";
+import { VoiceBidding, type VoiceTurn } from "./voice/bidding";
 
 // Players sit in the four corners, numbered in go-around play order to match
 // the worker's seats: 0 → 1 → 2 → 3 → 0 around the table. Partners sit
@@ -341,6 +342,38 @@ const changeSeat = document.querySelector<HTMLButtonElement>("#change-seat")!;
 const statusEl = document.querySelector<HTMLElement>("#status")!;
 const titleEl = document.querySelector<HTMLElement>("#title")!;
 const workerMsg = document.querySelector<HTMLElement>("#worker-msg")!;
+const voiceButton = document.querySelector<HTMLButtonElement>("#voice-bid")!;
+const voiceMessage = document.querySelector<HTMLElement>("#voice-msg")!;
+const voiceDebug = document.querySelector<HTMLElement>("#voice-debug")!;
+const voiceTranscript = document.querySelector<HTMLElement>("#voice-transcript")!;
+const voiceMatch = document.querySelector<HTMLElement>("#voice-match")!;
+
+function voiceTurn(): VoiceTurn | null {
+  if (!state || mySeat === null || offline || state.phase !== "bidding" ||
+      state.turn !== mySeat || animations.dealing || animations.sweeping) return null;
+  return {
+    key: `${state.dealId}:${state.biddingRound}:${state.turn}:${mySeat}`,
+    seat: mySeat, round: state.biddingRound, turnedSuit: state.trumpCard.suit,
+  };
+}
+
+function renderVoice(): void {
+  voiceButton.hidden = voiceMessage.hidden = mySeat === null;
+  voiceButton.disabled = !voice.available;
+  voiceButton.textContent = voice.enabled ? "🎙 Désactiver l’audio" : "🎙 Activer l’audio";
+  voiceButton.setAttribute("aria-pressed", String(voice.enabled));
+  voiceMessage.textContent = voice.available ? voice.message : "Audio indisponible (HTTPS et navigateur récent requis).";
+  voiceDebug.hidden = mySeat === null || (!voice.enabled && !voice.transcript);
+  voiceTranscript.textContent = voice.transcript || "—";
+  const command = voice.command;
+  const label = command?.kind === "pass" ? `passe (${command.word})`
+    : command?.kind === "take" ? `prend à ${command.suit ? SUIT_NAME[command.suit] : "la retourne"}` : "";
+  voiceMatch.textContent = voice.outcome === "partial" ? "En cours…"
+    : voice.outcome === "unrecognized" ? "Aucune commande reconnue"
+    : voice.outcome === "unavailable" ? `Reconnu : ${label} — indisponible à ce tour`
+    : voice.outcome === "ignored" ? "Ignoré : le tour a changé"
+    : voice.outcome === "sent" ? `Reconnu : ${label} — envoyé` : "";
+}
 
 /**
  * The cards to show on the table: the trick in progress, or — while it's empty
@@ -780,6 +813,8 @@ function renderTitle(): void {
 }
 
 function render(): void {
+  voice.update();
+  renderVoice();
   renderStatus();
   renderTitle();
   renderScoreboard(state);
@@ -867,6 +902,12 @@ const animations = createTableAnimations({
   table, corners: CORNERS, getState: () => state, getSeat: () => mySeat,
   render, renderQuadrant, renderBack, renderCard,
 });
+const voice = new VoiceBidding({ seat: () => mySeat, turn: voiceTurn, bid, changed: renderVoice });
+voiceButton.addEventListener("click", () => { if (voice.enabled) voice.cancel(); else void voice.start(); });
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) voice.cancel();
+});
+window.addEventListener("pagehide", () => voice.cancel());
 
 newMatchBtn.addEventListener("click", newMatch);
 changeSeat.addEventListener("click", () => setMySeat(null));

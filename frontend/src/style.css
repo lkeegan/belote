@@ -314,6 +314,29 @@ body {
   font-style: italic;
 }
 
+#voice-bid {
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 999px;
+  padding: 0.35rem 0.75rem;
+  font: inherit;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+}
+#voice-bid:disabled { opacity: 0.45; cursor: default; }
+#voice-bid[aria-pressed="true"] { background: #97401e; }
+.voice-msg { font-size: 0.8rem; max-width: 22rem; }
+.voice-debug:not([hidden]) {
+  display: flex;
+  flex: 1 0 100%;
+  flex-wrap: wrap;
+  gap: 0.3rem 1rem;
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+#voice-transcript { font-weight: 700; }
+#voice-match { color: #f5c542; }
+
 .hand-area {
   display: flex;
   flex-direction: column;

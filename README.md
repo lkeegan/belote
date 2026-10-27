@@ -36,6 +36,16 @@ full-screen table. Partners sit diagonally opposite, so the teams are
   corner, sliding in from their hand, and a completed trick stays on the table
   until its winner leads the next card. Trump cards are ringed in gold; cards use
   French faces (V/D/R for Valet/Dame/Roi).
+- **Voice bidding.** Choose a seat and press **🎙 Activer l’audio** once to
+  enable grammar-constrained French Vosk recognition on this device. It listens
+  on your bidding turns and pauses between them. Say “Je prends à cœurs”, “non”,
+  or “deux” (second round). Press **Désactiver l’audio** to release the microphone.
+  Detected text and command status are shown for debugging; only final, legal
+  commands can bid. Changing seats or hiding the tab switches audio off.
+  The first activation loads the cached/static French model (~42 MB); audio
+  stays on-device and no ASR server is needed. Microphone permission and HTTPS
+  (or localhost) are required. See [the comparison](voice-rec.md), or open
+  `voice.html` for the separate experiment lab.
 
 ## Scoring
 
@@ -106,7 +116,9 @@ undealt talon stays on the server. Shared definitions live in `shared/`.
 ## Development
 
 Both packages use [pnpm](https://pnpm.io/). Run the Worker and the front end
-together for local play.
+together for local play. Frontend dev/build also use Python 3 (standard library
+only) to prepare the pinned French Vosk model as a static asset. The first run
+downloads roughly 40 MB; subsequent runs reuse the generated file.
 
 ```bash
 # Terminal 1 — the Worker
@@ -121,7 +133,7 @@ pnpm typecheck                   # check Worker TypeScript
 cd frontend
 pnpm install
 pnpm dev      # start the dev server (defaults to the local worker)
-pnpm build    # type-check and build to dist/
+pnpm build    # prepare static voice model, type-check and build to dist/
 pnpm preview  # preview the production build
 pnpm test     # run the unit tests (Vitest)
 ```
