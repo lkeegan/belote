@@ -5,6 +5,7 @@ class Recognizer {
   static last: Recognizer;
   events = new Map<string, (message: any) => void>();
   acceptWaveformFloat = vi.fn();
+  setWords = vi.fn();
   remove = vi.fn();
   constructor(readonly rate: number, readonly grammar: string) { Recognizer.last = this; }
   on(event: string, callback: (message: any) => void) { this.events.set(event, callback); }
@@ -66,15 +67,17 @@ it("constrains live recognition and separates partials from final results", asyn
   const handlers = { partial: vi.fn(), final: vi.fn(), error: vi.fn() };
   const stream = vosk.createStream(48000, handlers);
   const recognizer = Recognizer.last;
-  expect(JSON.parse(recognizer.grammar)).toEqual(expect.arrayContaining(["non", "deux", "je prends à cœur", "[unk]"]));
+  expect(JSON.parse(recognizer.grammar)).toEqual(["oui", "non", "deux", "cœur", "piques", "carreaux", "trèfles", "[unk]"]);
   expect(recognizer.rate).toBe(48000);
+  expect(recognizer.setWords).toHaveBeenCalledWith(true);
   stream.push(new Float32Array(4096));
-  recognizer.emit("partialresult", { partial: "je prends" });
-  expect(handlers.partial).toHaveBeenCalledWith("je prends");
+  recognizer.emit("partialresult", { partial: "cœur" });
+  expect(handlers.partial).toHaveBeenCalledWith("cœur");
   expect(handlers.final).not.toHaveBeenCalled();
   stream.push(new Float32Array(4096));
-  recognizer.emit("result", { text: "je prends à cœur" });
-  expect(handlers.final).toHaveBeenCalledWith("je prends à cœur");
+  const words = [{ word: "cœur", conf: 0.9, start: 0, end: 0.5 }];
+  recognizer.emit("result", { text: "cœur", result: words });
+  expect(handlers.final).toHaveBeenCalledWith("cœur", words);
   stream.close();
   recognizer.emit("result", { text: "non" });
   expect(handlers.final).toHaveBeenCalledTimes(1);

@@ -1,9 +1,10 @@
 import type { Seat, Suit } from "../../../shared/game";
 import { VoskMicrophone, canUseVoskMicrophone, type VoiceCapture } from "./microphone";
 import { parseVoiceCommand, resolveVoiceBid, type BidContext, type VoiceCommand } from "./commands";
+import { evaluateVoiceConfidence } from "./confidence";
 
 export interface VoiceTurn extends BidContext { key: string; seat: Seat }
-export type VoiceOutcome = "partial" | "unrecognized" | "unavailable" | "sent" | "ignored" | null;
+export type VoiceOutcome = "partial" | "unrecognized" | "unavailable" | "low-confidence" | "sent" | "ignored" | null;
 
 /** Opt-in audio controls: only final commands from the current bidding turn act. */
 export class VoiceBidding {
@@ -14,6 +15,7 @@ export class VoiceBidding {
   message = "Audio désactivé.";
   transcript = "";
   command: VoiceCommand | null = null;
+  confidence: number | null = null;
   outcome: VoiceOutcome = null;
   private generation = 0;
   private seat: Seat | null = null;
@@ -44,13 +46,16 @@ export class VoiceBidding {
           if (!current() || !text || this.armed?.key !== key) return;
           this.transcript = text;
           this.command = null;
+          this.confidence = null;
           this.outcome = "partial";
           this.options.changed();
         },
-        final: (key, text) => {
+        final: (key, text, words) => {
           if (!current() || !text) return;
           this.transcript = text;
           this.command = parseVoiceCommand(text);
+          const confidence = evaluateVoiceConfidence(words);
+          this.confidence = confidence.score;
           const turn = this.options.turn();
           if (!turn || turn.key !== key || this.armed?.key !== key || this.submitted === key) {
             this.outcome = "ignored";
@@ -58,6 +63,7 @@ export class VoiceBidding {
             const bid = this.command ? resolveVoiceBid(this.command, turn) : null;
             if (!this.command) this.outcome = "unrecognized";
             else if (!bid) this.outcome = "unavailable";
+            else if (!confidence.accepted) this.outcome = "low-confidence";
             else {
               // Disarm before sending: queued final events cannot submit twice.
               this.submitted = key;

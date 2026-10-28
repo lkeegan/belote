@@ -1,9 +1,9 @@
-import { BrowserVosk } from "./vosk";
+import { BrowserVosk, type VoskWord } from "./vosk";
 import captureWorkletURL from "./capture-worklet.js?url&no-inline";
 
 export interface CaptureHandlers {
   partial(key: string, text: string): void;
-  final(key: string, text: string): void;
+  final(key: string, text: string, words?: readonly VoskWord[]): void;
   error(error: Error): void;
 }
 
@@ -90,7 +90,7 @@ export class VoskMicrophone implements VoiceCapture {
     const current = () => !this.closed && this.key === key;
     this.recognition = this.model.createStream(this.context!.sampleRate, {
       partial: (text) => { if (current()) this.handlers!.partial(key, text); },
-      final: (text) => { if (current()) this.handlers!.final(key, text); },
+      final: (text, words) => { if (current()) this.handlers!.final(key, text, words); },
       error: (error) => { if (current()) this.fail(error); },
     });
   }

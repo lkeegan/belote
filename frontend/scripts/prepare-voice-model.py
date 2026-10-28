@@ -21,14 +21,10 @@ def main():
     if TARGET.exists() and "--force" not in sys.argv:
         print(f"French Vosk static model ready: {TARGET.name}")
         return
-    cached = FRONTEND.parent / "experiments/voice/models" / f"{NAME}.zip"
-    if cached.exists():
-        content = cached.read_bytes()
-    else:
-        url = f"https://alphacephei.com/vosk/models/{NAME}.zip"
-        print(f"Downloading {url}", flush=True)
-        with urllib.request.urlopen(url, timeout=120) as source:
-            content = source.read()
+    url = f"https://alphacephei.com/vosk/models/{NAME}.zip"
+    print(f"Downloading {url}", flush=True)
+    with urllib.request.urlopen(url, timeout=120) as source:
+        content = source.read()
     if hashlib.sha256(content).hexdigest() != SHA256:
         raise ValueError("French Vosk model checksum mismatch")
     TARGET.parent.mkdir(parents=True, exist_ok=True)

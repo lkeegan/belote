@@ -371,6 +371,7 @@ function renderVoice(): void {
   voiceMatch.textContent = voice.outcome === "partial" ? "En cours…"
     : voice.outcome === "unrecognized" ? "Aucune commande reconnue"
     : voice.outcome === "unavailable" ? `Reconnu : ${label} — indisponible à ce tour`
+    : voice.outcome === "low-confidence" ? `Reconnu : ${label} — rejeté (${voice.confidence === null ? "score indisponible" : `score ${voice.confidence}, requis : 1.0`})`
     : voice.outcome === "ignored" ? "Ignoré : le tour a changé"
     : voice.outcome === "sent" ? `Reconnu : ${label} — envoyé` : "";
 }

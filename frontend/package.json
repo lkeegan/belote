@@ -9,12 +9,10 @@
     "dev": "python3 scripts/prepare-voice-model.py && vite",
     "build": "python3 scripts/prepare-voice-model.py && tsc && vite build",
     "voice-model": "python3 scripts/prepare-voice-model.py",
-    "test:browser": "playwright test",
     "preview": "vite preview",
     "test": "vitest run"
   },
   "devDependencies": {
-    "@playwright/test": "^1.64.1",
     "@types/canvas-confetti": "^1.9.0",
     "happy-dom": "^21.0.4",
     "typescript": "^6.0.3",

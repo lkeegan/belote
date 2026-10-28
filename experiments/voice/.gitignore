@@ -1,7 +1,0 @@
-.venv/
-.cache/
-models/
-audio/
-__pycache__/
-results.json
-browser-results.json

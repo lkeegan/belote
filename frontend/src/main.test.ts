@@ -137,8 +137,13 @@ it("sends a Vosk bid through the game connection and shows its raw text and matc
   expect(button.disabled).toBe(false);
   button.click();
   await vi.waitFor(() => expect(capture.key).not.toBeNull());
-  capture.handlers!.final(capture.key!, "Je prends à coeurs");
-  expect(document.querySelector("#voice-transcript")!.textContent).toBe("Je prends à coeurs");
+  const key = capture.key!;
+  capture.handlers!.final(key, "cœur", [{ word: "cœur", conf: 0.9999, start: 0, end: 0.3 }]);
+  expect(socket().sent).toHaveLength(0);
+  expect(document.querySelector("#voice-transcript")!.textContent).toBe("cœur");
+  expect(document.querySelector("#voice-match")!.textContent).toContain("rejeté (score 0.9999");
+  capture.handlers!.final(key, "cœur", [{ word: "cœur", conf: 1, start: 0, end: 0.3 }]);
+  expect(document.querySelector("#voice-transcript")!.textContent).toBe("cœur");
   expect(document.querySelector("#voice-match")!.textContent).toContain("envoyé");
   expect(socket().sent.map((message) => JSON.parse(message))).toEqual([
     { path: "/bid", body: { seat: 0, suit: "hearts" } },
