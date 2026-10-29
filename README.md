@@ -38,9 +38,9 @@ full-screen table. Partners sit diagonally opposite, so the teams are
   French faces (V/D/R for Valet/Dame/Roi).
 - **Voice bidding.** Choose a seat and press **🎙 Activer l’audio** once to
   enable grammar-constrained French Vosk recognition on this device. It listens
-  on your bidding turns and pauses between them. Its seven spoken commands are
-  “oui”, “non”, “deux”, “cœur”, “piques”, “carreaux” and “trèfles”. “Oui” takes
-  the retourne in round one; “deux” passes in round two. Press
+  on your bidding turns and pauses between them. Its eight spoken commands are
+  “oui”, “prends”, “non”, “deux”, “cœur”, “piques”, “carreaux” and “trèfles”.
+  “Oui” or “prends” takes the retourne in round one; “deux” passes in round two. Press
   **Désactiver l’audio** to release the microphone.
   Detected text and command status are shown for debugging; only final, legal
   commands can bid. Changing seats or hiding the tab switches audio off.

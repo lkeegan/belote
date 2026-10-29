@@ -67,7 +67,7 @@ it("constrains live recognition and separates partials from final results", asyn
   const handlers = { partial: vi.fn(), final: vi.fn(), error: vi.fn() };
   const stream = vosk.createStream(48000, handlers);
   const recognizer = Recognizer.last;
-  expect(JSON.parse(recognizer.grammar)).toEqual(["oui", "non", "deux", "cœur", "piques", "carreaux", "trèfles", "[unk]"]);
+  expect(JSON.parse(recognizer.grammar)).toEqual(["oui", "prends", "non", "deux", "cœur", "piques", "carreaux", "trèfles", "[unk]"]);
   expect(recognizer.rate).toBe(48000);
   expect(recognizer.setWords).toHaveBeenCalledWith(true);
   stream.push(new Float32Array(4096));

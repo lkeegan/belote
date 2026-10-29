@@ -19,6 +19,7 @@ it("normalizes accents and maps short commands without fuzzy matching", () => {
   expect(parseVoiceCommand("Non.")).toEqual({ kind: "pass", word: "non" });
   expect(parseVoiceCommand("Deux !")).toEqual({ kind: "pass", word: "deux" });
   expect(parseVoiceCommand("oui")).toEqual({ kind: "take", suit: null });
+  expect(parseVoiceCommand("prends")).toEqual({ kind: "take", suit: null });
   expect(parseVoiceCommand("don")).toBeNull();
 });
 
